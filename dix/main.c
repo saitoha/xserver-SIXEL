@@ -379,6 +379,8 @@ dix_main(int argc, char *argv[], char *envp[])
 
         free(ConnectionInfo);
         ConnectionInfo = NULL;
+        ddxGiveUp(EXIT_NO_ERROR);
+        break;
     }
     return 0;
 }

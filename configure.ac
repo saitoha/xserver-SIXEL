@@ -642,6 +642,7 @@ AC_ARG_ENABLE(glamor,         AS_HELP_STRING([--enable-glamor], [Build glamor di
 dnl kdrive and its subsystems
 AC_ARG_ENABLE(kdrive,         AS_HELP_STRING([--enable-kdrive], [Build kdrive servers (default: no)]), [KDRIVE=$enableval], [KDRIVE=no])
 AC_ARG_ENABLE(xephyr,         AS_HELP_STRING([--enable-xephyr], [Build the kdrive Xephyr server (default: auto)]), [XEPHYR=$enableval], [XEPHYR=auto])
+AC_ARG_ENABLE(xsixel,         AS_HELP_STRING([--enable-xsixel], [Build the kdrive Xsixel server (default: auto)]), [XSIXEL=$enableval], [XSIXEL=auto])
 AC_ARG_ENABLE(xfake,          AS_HELP_STRING([--enable-xfake], [Build the kdrive 'fake' server (default: auto)]), [XFAKE=$enableval], [XFAKE=auto])
 AC_ARG_ENABLE(xfbdev,         AS_HELP_STRING([--enable-xfbdev], [Build the kdrive framebuffer device server (default: auto)]), [XFBDEV=$enableval], [XFBDEV=auto])
 dnl kdrive options
@@ -834,7 +835,7 @@ SDK_REQUIRED_MODULES="$XPROTO $RANDRPROTO $RENDERPROTO $XEXTPROTO $INPUTPROTO $K
 # Make SDK_REQUIRED_MODULES available for inclusion in xorg-server.pc
 AC_SUBST(SDK_REQUIRED_MODULES)
 
-REQUIRED_MODULES="$FIXESPROTO $DAMAGEPROTO $XCMISCPROTO $XTRANS $BIGREQSPROTO $SDK_REQUIRED_MODULES"
+REQUIRED_MODULES="$FIXESPROTO $DAMAGEPROTO $XCMISCPROTO $BIGREQSPROTO $SDK_REQUIRED_MODULES"
 
 dnl systemd socket activation
 dnl activate the code in libxtrans that grabs systemd's socket fds
@@ -2316,6 +2317,9 @@ dnl kdrive DDX
 
 XEPHYR_LIBS=
 XEPHYR_INCS=
+XSIXEL_LIBS=
+XSIXEL_INCS=
+XSIXEL_DIRS=
 
 AM_CONDITIONAL(KDRIVE, [test x$KDRIVE = xyes])
 
@@ -2362,6 +2366,18 @@ if test "$KDRIVE" = yes; then
     fi
     if test "x$KDRIVE_MOUSE" = xyes; then
        AC_DEFINE(KDRIVE_MOUSE, 1, [Enable KDrive mouse driver])
+    fi
+
+    AC_CHECK_HEADERS([sixel.h])
+    if test x"$ac_cv_header_sixel_h" = xyes && test "x$XSIXEL" = xauto; then
+       XSIXEL=yes
+    fi
+
+    if test x"$XSIXEL" = xyes; then
+       AC_DEFINE(XSIXELSERVER, 1, [Build Xsixel server])
+       PKG_CHECK_MODULES([SIXEL], [libsixel])
+       XSIXEL_LIBS="${SIXEL_LIBS}"
+       XSIXEL_INCS="${SIXEL_CFLAGS} ${XSERVER_CFLAGS}"
     fi
 
     XEPHYR_REQUIRED_LIBS="xau xdmcp xcb xcb-shape xcb-aux xcb-image xcb-icccm xcb-shm xcb-keysyms xcb-randr"
@@ -2428,6 +2444,8 @@ if test "$KDRIVE" = yes; then
 
     AC_SUBST([XEPHYR_LIBS])
     AC_SUBST([XEPHYR_INCS])
+    AC_SUBST([XSIXEL_LIBS])
+    AC_SUBST([XSIXEL_INCS])
 fi
 AC_SUBST([KDRIVE_INCS])
 AC_SUBST([KDRIVE_PURE_INCS])
@@ -2441,6 +2459,7 @@ AM_CONDITIONAL(KDRIVE_KBD,   [test "x$KDRIVE_KBD" = xyes])
 AM_CONDITIONAL(KDRIVE_MOUSE, [test "x$KDRIVE_MOUSE" = xyes])
 AM_CONDITIONAL(TSLIB, [test "x$HAVE_TSLIB" = xyes])
 AM_CONDITIONAL(KDRIVEFBDEV, [test "x$XFBDEV" = xyes])
+AM_CONDITIONAL(XSIXELSERVER, [test "x$XSIXEL" = xyes])
 AM_CONDITIONAL(XEPHYR, [test "x$KDRIVE" = xyes && test "x$XEPHYR" = xyes])
 AM_CONDITIONAL(BUILD_KDRIVEFBDEVLIB, [test "x$KDRIVE" = xyes && test "x$KDRIVEFBDEVLIB" = xyes])
 AM_CONDITIONAL(XFAKESERVER, [test "x$KDRIVE" = xyes && test "x$XFAKE" = xyes])
@@ -2609,6 +2628,7 @@ hw/xquartz/xpr/Makefile
 hw/kdrive/Makefile
 hw/kdrive/ephyr/Makefile
 hw/kdrive/ephyr/man/Makefile
+hw/kdrive/sixel/Makefile
 hw/kdrive/fake/Makefile
 hw/kdrive/fbdev/Makefile
 hw/kdrive/linux/Makefile

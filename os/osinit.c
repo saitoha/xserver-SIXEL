@@ -214,6 +214,7 @@ OsInit(void)
 #endif
 
 #if !defined(XQUARTZ)    /* STDIN is already /dev/null and STDOUT/STDERR is managed by console_redirect.c */
+#if 0 /* for SIXEL */
 # if defined(__APPLE__)
         int devnullfd = open(devnull, O_RDWR, 0);
         assert(devnullfd > 2);
@@ -225,6 +226,7 @@ OsInit(void)
         fclose(stdin);
         fclose(stdout);
 # endif
+#endif
         /* 
          * If a write of zero bytes to stderr returns non-zero, i.e. -1, 
          * then writing to stderr failed, and we'll write somewhere else 

@@ -1,0 +1,19 @@
+INCLUDES = \
+	@KDRIVE_PURE_INCS@ \
+	@KDRIVE_CFLAGS@ \
+	@XSIXEL_INCS@
+
+bin_PROGRAMS = Xsixel
+
+Xsixel_SOURCES = sixel.c
+
+Xsixel_LDADD = \
+	@KDRIVE_LIBS@ \
+	@XSIXEL_LIBS@
+
+Xsixel_DEPENDENCIES = @KDRIVE_LOCAL_LIBS@
+
+Xsixel_LDFLAGS = $(LD_EXPORT_SYMBOLS_FLAG)
+
+relink:
+	rm -f $(bin_PROGRAMS) && make $(bin_PROGRAMS)

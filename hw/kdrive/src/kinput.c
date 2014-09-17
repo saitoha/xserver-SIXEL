@@ -1280,6 +1280,7 @@ KdInitInput(void)
     }
 
     mieqInit();
+    KdExecuteChildCommand();
 }
 
 void

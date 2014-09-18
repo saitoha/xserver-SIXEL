@@ -114,7 +114,6 @@ typedef struct
     int pitch;
     int pixel_w, pixel_h;
     int cell_w, cell_h;
-    int mouse_x, mouse_y, mouse_button;
     Rotation randr;
     Bool shadow;
     unsigned char *buffer;
@@ -425,12 +424,9 @@ static void tty_raw(void)
     }
 }
 
-static int tty_restore(void)
+static void tty_restore(void)
 {
-    if (tcsetattr(fileno(stdin), TCSAFLUSH, &orig_termios) < 0) {
-        return -1;
-    }
-    return 0;
+    return tcsetattr(fileno(stdin), TCSADRAIN, &orig_termios) < 0;
 }
 
 static int SIXEL_Flip(SIXEL_Driver *driver)
@@ -605,9 +601,6 @@ static Bool sixelScreenInit(KdScreenInfo *screen)
     driver->pixel_h = 0;
     driver->cell_w = 0;
     driver->cell_h = 0;
-    driver->mouse_x = screen->width / 2;
-    driver->mouse_y = screen->height / 2;
-    driver->mouse_button = 0;
     driver->pitch = screen->width * 3;
 
     printf("\033[14t" "\033[18t");
@@ -1104,10 +1097,10 @@ static void sixelPollInput(void)
                     case SIXEL_LEFT:  scancode = 105+8; break;
                     case SIXEL_HOME:  scancode = 102+8; break;
                     case SIXEL_END:   scancode = 107+8; break;
-                    case SIXEL_F1:    scancode = 59+8;  break;
-                    case SIXEL_F2:    scancode = 60+8;  break;
-                    case SIXEL_F3:    scancode = 61+8;  break;
-                    case SIXEL_F4:    scancode = 62+8;  break;
+                    case SIXEL_F1:    scancode =  59+8; break;
+                    case SIXEL_F2:    scancode =  60+8; break;
+                    case SIXEL_F3:    scancode =  61+8; break;
+                    case SIXEL_F4:    scancode =  62+8; break;
                     default:
                         scancode = 0;
                         break;
@@ -1165,7 +1158,12 @@ static int xsixelInit(void)
 
 static void xsixelFini(void)
 {
+    fd_set fdset;
+    struct timeval timeout;
+    char buf[4096];
+
     printf("\033\\");
+    fflush(stdout);
 #if USE_DECMOUSE
     printf("\033[0'z" "\033[2'{" "\033[4'{");
 #else
@@ -1181,6 +1179,14 @@ static void xsixelFini(void)
         free(g_driver);
     }
 
+    FD_ZERO(&fdset);
+    FD_SET(STDIN_FILENO, &fdset);
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 1000;
+
+    if (select(STDIN_FILENO + 1, &fdset, NULL, NULL, &timeout) == 1) {
+        read(STDIN_FILENO, buf, sizeof(buf));
+    }
     tty_restore();
 }
 

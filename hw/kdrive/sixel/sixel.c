@@ -426,7 +426,7 @@ static void tty_raw(void)
 
 static void tty_restore(void)
 {
-    return tcsetattr(fileno(stdin), TCSADRAIN, &orig_termios) < 0;
+    tcsetattr(fileno(stdin), TCSADRAIN, &orig_termios);
 }
 
 static int SIXEL_Flip(SIXEL_Driver *driver)

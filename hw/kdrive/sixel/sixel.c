@@ -572,9 +572,9 @@ static Bool sixelScreenInit(KdScreenInfo *screen)
         screen->width = 640;
         screen->height = 480;
     }
-    if (!screen->fb.depth) {
+//    if (!screen->fb.depth) {
         screen->fb.depth = 24;
-    }
+//    }
 
     driver = g_driver = calloc(1, sizeof(SIXEL_Driver));
 

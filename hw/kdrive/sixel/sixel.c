@@ -301,14 +301,14 @@ static int SendModifierKey(int state, uint8_t press_state)
 static int GetScancode(int code)
 {
     static u_char tbl[] = {
-         0,  0,  0,  0,  0,  0,  0,  0, 14, 15, 28,  0,  0, 28,  0,  0, /* 0x0 - 0xf */
+         0,  0,  0,  0,  0,  0,  0,  0, 14, 15, 28,  0,  0, 28,  0,  0, /* 0x00 - 0x0f */
          0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0, /* 0x10 - 0x1f */
         57,  2, 40,  4,  5,  6,  8, 40, 10, 11,  9, 13, 51, 12, 52, 53, /* 0x20 - 0x2f */
         11,  2,  3,  4,  5,  6,  7,  8,  9, 10, 39, 39, 51, 13, 52, 53, /* 0x30 - 0x3f */
          3, 30, 48, 46, 32, 18, 33, 34, 35, 23, 36, 37, 38, 50, 49, 24, /* 0x40 - 0x4f */
         25, 16, 19, 31, 20, 22, 47, 17, 45, 21, 44, 26, 43, 27,  7, 12, /* 0x50 - 0x5f */
         41, 30, 48, 46, 32, 18, 33, 34, 35, 23, 36, 37, 38, 50, 49, 24, /* 0x60 - 0x6f */
-        25, 16, 19, 31, 20, 22, 47, 17, 45, 21, 44, 26, 43, 27, 41,  0, /* 0x70 - 0x7f */
+        25, 16, 19, 31, 20, 22, 47, 17, 45, 21, 44, 26, 43, 27, 41, 41, /* 0x70 - 0x7f */
     };
 
     if(code <= 0x7f && tbl[code] > 0) {
@@ -441,8 +441,7 @@ static void SIXEL_UpdateRects(SIXEL_Driver *driver, int numrects, pixman_box16_t
 }
 
 
-Bool
-sixelMapFramebuffer(KdScreenInfo *screen)
+static Bool sixelMapFramebuffer(KdScreenInfo *screen)
 {
     SIXEL_Driver *driver = screen->driver;
     KdPointerMatrix m;
@@ -813,7 +812,6 @@ static Status sixelKeyboardInit(KdKeyboardInfo *ki)
     ki->xkbRules = strdup("evdev");
     ki->xkbModel = strdup("pc105");
     ki->xkbLayout = strdup("us");
-
     sixelKeyboard = ki;
     TRACE1("sixelKeyboardInit() %p\n", ki);
     return Success;
@@ -950,6 +948,7 @@ static void sixelPollInput(void)
                     }
                 }
                 break;
+
             case SIXEL_MOUSE_DEC:
                 if (key->nparams >= 4) {
                     mouse_y = key->params[2];
@@ -1009,8 +1008,9 @@ static void sixelPollInput(void)
                 printf("\033['|");
                 fflush(stdout);
                 break;
+
             case SIXEL_FKEYS:
-                scancode = key->value;
+                /* TODO: modifyFunctionKeys */
                 switch (key->params[0]) {
                 case 2:  scancode = 110+8; break;
                 case 3:  scancode = 111+8; break;
@@ -1048,6 +1048,7 @@ static void sixelPollInput(void)
                 if ((key->value >= SIXEL_UP && key->value <= SIXEL_LEFT) ||
                     (key->value >= SIXEL_END && key->value <= SIXEL_HOME) ||
                     (key->value >= SIXEL_F1 && key->value <= SIXEL_F4)) {
+                    /* TODO: modifyCursorKeys, modifyOtherKeys */
                     switch(key->value) {
                     case SIXEL_UP:    scancode = 103+8; break;
                     case SIXEL_DOWN:  scancode = 108+8; break;
@@ -1131,27 +1132,28 @@ static void xsixelFini(void)
     printf("\033[>0p");
     printf("\033[?25h");
 
+    FD_ZERO(&fdset);
+    FD_SET(STDIN_FILENO, &fdset);
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 10000;
+
+    if (select(STDIN_FILENO + 1, &fdset, NULL, NULL, &timeout) == 1) {
+        while (read(STDIN_FILENO, buf, sizeof(buf))) {
+            ;
+        }
+    }
+    tty_restore();
+
     if (g_driver) {
         sixel_dither_unref(g_driver->dither);
         sixel_output_unref(g_driver->output);
         free(g_driver);
     }
-
-    FD_ZERO(&fdset);
-    FD_SET(STDIN_FILENO, &fdset);
-    timeout.tv_sec = 0;
-    timeout.tv_usec = 1000;
-
-    if (select(STDIN_FILENO + 1, &fdset, NULL, NULL, &timeout) == 1) {
-        read(STDIN_FILENO, buf, sizeof(buf));
-    }
-    tty_restore();
 }
 
-void
-CloseInput (void)
+void CloseInput(void)
 {
-    KdCloseInput ();
+    KdCloseInput();
 }
 
 KdOsFuncs sixelOsFuncs = {

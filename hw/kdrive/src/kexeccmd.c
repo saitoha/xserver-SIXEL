@@ -7,7 +7,7 @@
 #include "opaque.h"
 #ifdef __ANDROID__
 #include <android/log.h>
-#define printf(...) __android_log_print(ANDROID_LOG_INFO, "XSDL", __VA_ARGS__)
+#define printf(...) __android_log_print(ANDROID_LOG_INFO, "XSIXEL", __VA_ARGS__)
 #endif
 
 extern char *kdExecuteCommand;

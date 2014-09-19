@@ -34,6 +34,7 @@
 #include <X11/keysym.h>
 #include <sys/wait.h>
 #include <pthread.h>
+#include <signal.h>
 
 #define USE_DECMOUSE 1
 
@@ -297,21 +298,9 @@ static int SendModifierKey(int state, uint8_t press_state)
     return posted;
 }
 
-static char* GetKbdType(void)
-{
-    char* env;
-    env = getenv("XSIXEL_KBD");
-    if (env) {
-        return env;
-    }
-    else {
-        return "";
-    }
-}
-
 static int GetScancode(int code)
 {
-    static u_char us101_kbd_tbl[] = {
+    static u_char tbl[] = {
          0,  0,  0,  0,  0,  0,  0,  0, 14, 15, 28,  0,  0, 28,  0,  0, /* 0x0 - 0xf */
          0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0, /* 0x10 - 0x1f */
         57,  2, 40,  4,  5,  6,  8, 40, 10, 11,  9, 13, 51, 12, 52, 53, /* 0x20 - 0x2f */
@@ -321,26 +310,6 @@ static int GetScancode(int code)
         41, 30, 48, 46, 32, 18, 33, 34, 35, 23, 36, 37, 38, 50, 49, 24, /* 0x60 - 0x6f */
         25, 16, 19, 31, 20, 22, 47, 17, 45, 21, 44, 26, 43, 27, 41,  0, /* 0x70 - 0x7f */
     };
-    static u_char jp106_kbd_tbl[] = {
-         0,  0,  0,  0,  0,  0,  0,  0, 14, 15, 28,  0,  0, 28,  0,  0, /* 0x0 - 0xf */
-         0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0, /* 0x10 - 0x1f */
-        57,  2,  3,  4,  5,  6,  7,  8,  9, 10, 40, 39, 51, 12, 52, 53, /* 0x20 - 0x2f */
-        11,  2,  3,  4,  5,  6,  7,  8,  9, 10, 40, 39, 51, 12, 52, 53, /* 0x30 - 0x3f */
-        26, 30, 48, 46, 32, 18, 33, 34, 35, 23, 36, 37, 38, 50, 49, 24, /* 0x40 - 0x4f */
-        25, 16, 19, 31, 20, 22, 47, 17, 45, 21, 44, 27, 43, 43, 13, 12, /* 0x50 - 0x5f */
-        26, 30, 48, 46, 32, 18, 33, 34, 35, 23, 36, 37, 38, 50, 49, 24, /* 0x60 - 0x6f */
-        25, 16, 19, 31, 20, 22, 47, 17, 45, 21, 44, 27, 43, 43, 13,  0, /* 0x70 - 0x7f */
-    };
-    static u_char* tbl;
-
-    if (!tbl) {
-        if (strcmp(GetKbdType(),"jp106") == 0) {
-            tbl = jp106_kbd_tbl;
-        }
-        else {
-            tbl = us101_kbd_tbl;
-        }
-    }
 
     if(code <= 0x7f && tbl[code] > 0) {
         return tbl[code]+8;
@@ -358,7 +327,7 @@ static int GetState(int code)
         }
     }
     else if (code <= 0x7f) {
-        static u_char us101_kbd_tbl[] = {
+        static u_char tbl[] = {
             0, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, /* 0x20 - 0x2f */
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, /* 0x30 - 0x3f */
             1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, /* 0x40 - 0x4f */
@@ -366,24 +335,6 @@ static int GetState(int code)
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /* 0x60 - 0x6f */
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, /* 0x70 - 0x7f */
         };
-        static u_char jp106_kbd_tbl[] = {
-            0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, /* 0x20 - 0x2f */
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, /* 0x30 - 0x3f */
-            0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, /* 0x40 - 0x4f */
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, /* 0x50 - 0x5f */
-            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /* 0x60 - 0x6f */
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, /* 0x70 - 0x7f */
-        };
-        static u_char* tbl;
-
-        if (!tbl) {
-            if (strcmp(GetKbdType(),"jp106") == 0) {
-                tbl = jp106_kbd_tbl;
-            }
-            else {
-                tbl = us101_kbd_tbl;
-            }
-        }
 
         /* Shift */
         return tbl[code - 0x20];
@@ -854,7 +805,14 @@ static Status sixelKeyboardInit(KdKeyboardInfo *ki)
 {
     ki->minScanCode = 8;
     ki->maxScanCode = 255;
+    free(ki->name);
+    free(ki->xkbRules);
+    free(ki->xkbModel);
+    free(ki->xkbLayout);
     ki->name = strdup("mlterm keyboard");
+    ki->xkbRules = strdup("evdev");
+    ki->xkbModel = strdup("pc105");
+    ki->xkbLayout = strdup("us");
 
     sixelKeyboard = ki;
     TRACE1("sixelKeyboardInit() %p\n", ki);

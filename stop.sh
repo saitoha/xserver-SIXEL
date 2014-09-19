@@ -1,3 +1,3 @@
 #!/bin/sh
 
-pkill Xsdl
+pkill Xsixel

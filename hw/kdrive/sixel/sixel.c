@@ -265,7 +265,7 @@ restart:
             case '@'...'~':
                 if (keys[size].nparams < sizeof(keys[size].params) / sizeof(*keys[size].params)) {
                     keys[size].params[keys[size].nparams++] = pbytes;
-                    keys[size++].value = 1 << 12 | ibytes << 6  | c - '@';
+                    keys[size++].value = 1 << 12 | ibytes << 6  | (c - '@');
                 }
                 state = STATE_GROUND;
                 break;
@@ -570,7 +570,7 @@ static Bool sixelScreenInit(KdScreenInfo *screen)
 #endif
     screen->rate = 8;  /* 60 is too intense for CPU */
 
-    printf("\033]1;Freedesktop.org X server on SIXEL\007", NULL);
+    printf("\033]1;Freedesktop.org X server on SIXEL\007");
     return sixelMapFramebuffer(screen);
 }
 
@@ -964,11 +964,11 @@ static void sixelPollInput(void)
                         }
                         break;
                     case 3:
-                        if (mouse_button & 1) {
+                        //if (mouse_button & 1) {
                             mouseState &= ~KD_BUTTON_1;
                             mouse_button = 0;
                             KdEnqueuePointerEvent(sixelPointer, mouseState|KD_MOUSE_DELTA, 0, 0, 1);
-                        }
+                        //}
                         break;
                     case 4:
                         if (!(mouse_button & 2)) {
@@ -978,11 +978,11 @@ static void sixelPollInput(void)
                         }
                         break;
                     case 5:
-                        if (mouse_button & 2) {
+                        //if (mouse_button & 2) {
                             mouseState &= ~KD_BUTTON_2;
                             mouse_button = 0;
                             KdEnqueuePointerEvent(sixelPointer, mouseState|KD_MOUSE_DELTA, 0, 0, 1);
-                        }
+                        //}
                         break;
                     case 6:
                         if (!(mouse_button & 4)) {
@@ -992,11 +992,11 @@ static void sixelPollInput(void)
                         }
                         break;
                     case 7:
-                        if (mouse_button & 4) {
+                        //if (mouse_button & 4) {
                             mouseState &= ~KD_BUTTON_3;
                             mouse_button = 0;
                             KdEnqueuePointerEvent(sixelPointer, mouseState|KD_MOUSE_DELTA, 0, 0, 1);
-                        }
+                        //}
                         break;
                     case 32:
                     case 64:

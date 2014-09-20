@@ -178,6 +178,7 @@ static int getkeys(char *buf, int nread, sixel_key_t *keys)
 
     for (i = 0; i < nread; i++) {
         c = buf[i];
+restart:
         switch (state) {
         case STATE_GROUND:
             switch (c) {
@@ -199,9 +200,8 @@ static int getkeys(char *buf, int nread, sixel_key_t *keys)
                 break;
             default:
                 keys[size++].value = 0x1b;
-                keys[size++].value = c;
                 state = STATE_GROUND;
-                break;
+                goto restart;
             }
             break;
         case STATE_CSI:

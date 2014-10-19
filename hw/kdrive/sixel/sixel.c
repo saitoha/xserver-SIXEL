@@ -132,6 +132,8 @@ static SIXEL_Driver *g_driver = NULL;
 #define SIXEL_LEFT              (1 << 12 | ('D' - '@'))
 #define SIXEL_END               (1 << 12 | ('F' - '@'))
 #define SIXEL_HOME              (1 << 12 | ('H' - '@'))
+#define SIXEL_FOCUSIN           (1 << 12 | ('I' - '@'))
+#define SIXEL_FOCUSOUT          (1 << 12 | ('O' - '@'))
 #define SIXEL_F1                (1 << 12 | ('P' - '@'))
 #define SIXEL_F2                (1 << 12 | ('Q' - '@'))
 #define SIXEL_F3                (1 << 12 | ('R' - '@'))
@@ -429,10 +431,18 @@ static void SIXEL_UpdateRects(SIXEL_Driver *driver, int numrects, pixman_box16_t
                 }
             }
             printf("\033[%d;%dH", start_row, start_col);
-            sixel_encode(driver->bitmap, (rects->x2 - rects->x1), (rects->y2 - rects->y1), 3, driver->dither, driver->output);
+            sixel_encode(driver->bitmap,
+                         (rects->x2 - rects->x1),
+                         (rects->y2 - rects->y1),
+                         3,
+                         driver->dither,
+                         driver->output);
 #if SIXEL_VIDEO_DEBUG
             format = "\033[100;1Hframes: %05d, x: %04d, y: %04d, w: %04d, h: %04d";
-            printf(format, ++frames, rects->x1, rects->y2, rects->x2 - rects->x1, rects->y2 - rects->y1);
+            printf(format, ++frames,
+                   rects->x1, rects->y2,
+                   rects->x2 - rects->x1,
+                   rects->y2 - rects->y1);
 #endif
         }
     } else {
@@ -1054,6 +1064,11 @@ static void sixelPollInput(void)
                 }
                 KdEnqueueKeyboardEvent(sixelKeyboard, scancode, 1);
                 break;
+            case SIXEL_FOCUSIN:
+                SIXEL_Flip(g_driver);
+                break;
+            case SIXEL_FOCUSOUT:
+                break;
             default:
                 if ((key->value >= SIXEL_UP && key->value <= SIXEL_LEFT) ||
                     (key->value >= SIXEL_END && key->value <= SIXEL_HOME) ||
@@ -1095,6 +1110,9 @@ static void sixelPollInput(void)
                         SendModifierKey(state, 1);
                     }
                     KdEnqueueKeyboardEvent(sixelKeyboard, scancode, 1);
+                    if (key->value == 0x0c) {
+                        SIXEL_Flip(g_driver);
+                    }
                 }
                 break;
             }
@@ -1111,6 +1129,7 @@ static int xsixelInit(void)
 {
     tty_raw();
     printf("\033[H");
+    printf("\033[?1004h");
     printf("\033[?25l");
     printf("\033[>2p");
 #if USE_DECMOUSE
@@ -1146,6 +1165,7 @@ static void xsixelFini(void)
 #endif
     printf("\033[>0p");
     printf("\033[?25h");
+    printf("\033[?1004l");
 
     FD_ZERO(&fdset);
     FD_SET(STDIN_FILENO, &fdset);

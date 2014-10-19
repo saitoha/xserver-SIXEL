@@ -37,6 +37,7 @@
 #include <signal.h>
 
 #define USE_DECMOUSE 1
+#define USE_FILTER_RECTANGLE 1
 
 static void xsixelFini(void);
 static Bool sixelScreenInit(KdScreenInfo *screen);
@@ -998,6 +999,12 @@ static void sixelPollInput(void)
                             KdEnqueuePointerEvent(sixelPointer, mouseState|KD_MOUSE_DELTA, 0, 0, 1);
                         //}
                         break;
+                    case 10:
+                        printf("\033[1;1'z" "\033[3'{" "\033[1'{");
+                        printf("\033['w");
+                        break;
+                    case 8:
+                    case 9:
                     case 32:
                     case 64:
                     default:
@@ -1005,7 +1012,10 @@ static void sixelPollInput(void)
                     }
                     mouse_button = key->params[1];
                 }
+#if USE_FILTER_RECTANGLE
+#else
                 printf("\033['|");
+#endif
                 fflush(stdout);
                 break;
 
@@ -1105,7 +1115,12 @@ static int xsixelInit(void)
     printf("\033[>2p");
 #if USE_DECMOUSE
     printf("\033[1;1'z" "\033[3'{" "\033[1'{");
+#if USE_FILTER_RECTANGLE
+    printf("\033['w");
+#else
     printf("\033['|");
+#endif
+
 #else
     printf("\033[?1003h");
     printf("\033[?1006h");

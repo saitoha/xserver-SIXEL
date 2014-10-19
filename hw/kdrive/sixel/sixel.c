@@ -35,6 +35,8 @@
 #include <sys/wait.h>
 #include <pthread.h>
 #include <signal.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
 
 #define USE_DECMOUSE 1
 #define USE_FILTER_RECTANGLE 1
@@ -525,6 +527,7 @@ static int sixel_write(char *data, int size, void *priv)
 static Bool sixelScreenInit(KdScreenInfo *screen)
 {
     SIXEL_Driver *driver;
+    struct winsize ws;
 
     TRACE1("%s\n", __func__);
 
@@ -564,7 +567,18 @@ static Bool sixelScreenInit(KdScreenInfo *screen)
     driver->cell_h = 0;
     driver->pitch = screen->width * 3;
 
-    printf("\033[14t" "\033[18t");
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws);
+    driver->pixel_w = ws.ws_xpixel;
+    driver->pixel_h = ws.ws_ypixel;
+    driver->cell_w = ws.ws_col;
+    driver->cell_h = ws.ws_row;
+
+    if (driver->cell_w <= 0 || driver->cell_h <= 0) {
+        printf("\033[18t");
+    }
+    if (driver->pixel_w <= 0 || driver->pixel_h <= 0) {
+        printf("\033[14t");
+    }
 
     driver->randr = screen->randr;
     screen->driver = driver;
@@ -605,6 +619,7 @@ static void sixelShadowUpdate(ScreenPtr pScreen, shadowBufPtr pBuf)
         updateRectsPixelCount += (pBuf->pDamage->damage.extents.x2 - pBuf->pDamage->damage.extents.x1) *
                                  (pBuf->pDamage->damage.extents.y2 - pBuf->pDamage->damage.extents.y1);
     }
+#if 0
     /*
      * Each subrect is copied into temp buffer before uploading to OpenGL texture,
      * so if total area of pixels copied is more than 1/3 of the whole screen area,
@@ -615,6 +630,9 @@ static void sixelShadowUpdate(ScreenPtr pScreen, shadowBufPtr pBuf)
     } else {
         SIXEL_UpdateRects(driver, amount, rects);
     }
+#else
+    SIXEL_UpdateRects(driver, amount, rects);
+#endif
 }
 
 static void *sixelShadowWindow(ScreenPtr pScreen, CARD32 row, CARD32 offset, int mode, CARD32 *size, void *closure)

@@ -1000,8 +1000,6 @@ static void sixelPollInput(void)
                         //}
                         break;
                     case 10:
-                        printf("\033[1;1'z" "\033[3'{" "\033[1'{");
-                        printf("\033['w");
                         break;
                     case 8:
                     case 9:
@@ -1013,6 +1011,8 @@ static void sixelPollInput(void)
                     mouse_button = key->params[1];
                 }
 #if USE_FILTER_RECTANGLE
+                printf("\033[1;1'z" "\033[3'{" "\033[1'{");
+                printf("\033['w");
 #else
                 printf("\033['|");
 #endif

@@ -275,7 +275,7 @@ restart:
             case '@'...'~':
                 if (keys[size].nparams < sizeof(keys[size].params) / sizeof(*keys[size].params)) {
                     keys[size].params[keys[size].nparams++] = pbytes;
-                    keys[size++].value = 1 << 12 | ibytes << 6  | c - '@';
+                    keys[size++].value = 1 << 12 | ibytes << 6  | (c - '@');
                 }
                 state = STATE_GROUND;
                 break;
@@ -630,7 +630,7 @@ static Bool sixelScreenInit(KdScreenInfo *screen)
 #endif
     screen->rate = 8;  /* 60 is too intense for CPU */
 
-    printf("\033]1;Freedesktop.org X server on SIXEL\007", NULL);
+    printf("\033]1;Freedesktop.org X server on SIXEL\007");
     return sixelMapFramebuffer(screen);
 }
 

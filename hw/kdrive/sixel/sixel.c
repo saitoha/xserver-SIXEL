@@ -33,7 +33,9 @@
 #include <termios.h>
 #include <X11/keysym.h>
 #include <sys/wait.h>
-#include <pthread.h>
+#if USE_MUTEX
+# include <pthread.h>
+#endif
 #include <signal.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
@@ -61,6 +63,9 @@ static void sixelMouseDisable(KdPointerInfo *pi);
 
 KdKeyboardInfo *sixelKeyboard = NULL;
 KdPointerInfo *sixelPointer = NULL;
+#if USE_MUTEX
+pthread_mutex_t sixel_mutex;
+#endif
 
 #if 0
 #define DEBUG 1
@@ -390,9 +395,15 @@ static int SIXEL_Flip(SIXEL_Driver *driver)
     int start_row = 1;
     int start_col = 1;
 
+#if USE_MUTEX
+    pthread_mutex_lock(&sixel_mutex);
+#endif
     memcpy(driver->bitmap, driver->buffer, driver->h * driver->w * 3);
     printf("\033[%d;%dH", start_row, start_col);
     sixel_encode(driver->bitmap, driver->w, driver->h, 3, driver->dither, driver->output);
+#if USE_MUTEX
+    pthread_mutex_unlock(&sixel_mutex);
+#endif
 
     return 0;
 }
@@ -408,45 +419,69 @@ static void SIXEL_UpdateRects(SIXEL_Driver *driver, int numrects, pixman_box16_t
     static int frames = 0;
     char *format;
 #endif
+    pixman_box16_t box;
+
+    box.x1 = 65535;
+    box.y1 = 65535;
+    box.x2 = 0;
+    box.y2 = 0;
 
     if (driver->cell_h != 0 && driver->pixel_h != 0) {
-        for (i = 0; i < numrects; ++i, ++rects) {
-            start_row = 1;
-            start_col = 1;
-            cell_height = driver->pixel_h / driver->cell_h;
-            cell_width = driver->pixel_w / driver->cell_w;
-            start_row += rects->y1 / cell_height;
-            start_col += rects->x1 / cell_width;
-            rects->y1 = (start_row - 1) * cell_height;
-            rects->x1 = (start_col - 1) * cell_width;
-            rects->y2 = min((rects->y2 / cell_height + 1) * cell_height, driver->h);
-            rects->x2 = min((rects->x2 / cell_width + 1) * cell_width, driver->w);
-            if (rects->x1 == 0 && rects->x2 == driver->w) {
-                dst = driver->bitmap;
-                src = driver->buffer + rects->y1 * driver->w * 3;
-                memcpy(dst, src, (rects->y2 - rects->y1) * driver->w * 3);
-            } else {
-                for (y = rects->y1; y < rects->y2; ++y) {
-                    dst = driver->bitmap + (y - rects->y1) * (rects->x2 - rects->x1) * 3;
-                    src = driver->buffer + y * driver->w * 3 + rects->x1 * 3;
-                    memcpy(dst, src, (rects->x2 - rects->x1) * 3);
-                }
-            }
-            printf("\033[%d;%dH", start_row, start_col);
-            sixel_encode(driver->bitmap,
-                         (rects->x2 - rects->x1),
-                         (rects->y2 - rects->y1),
-                         3,
-                         driver->dither,
-                         driver->output);
-#if SIXEL_VIDEO_DEBUG
-            format = "\033[100;1Hframes: %05d, x: %04d, y: %04d, w: %04d, h: %04d";
-            printf(format, ++frames,
-                   rects->x1, rects->y2,
-                   rects->x2 - rects->x1,
-                   rects->y2 - rects->y1);
+#if USE_MUTEX
+        pthread_mutex_lock(&sixel_mutex);
 #endif
+        for (i = 0; i < numrects; ++i, ++rects) {
+            if (rects->x1 < box.x1) {
+                box.x1 = rects->x1;
+            }
+            if (rects->y1 < box.y1) {
+                box.y1 = rects->y1;
+            }
+            if (rects->x2 > box.x2) {
+                box.x2 = rects->x2;
+            }
+            if (rects->y2 > box.y2) {
+                box.y2 = rects->y2;
+            }
         }
+        start_row = 1;
+        start_col = 1;
+        cell_height = driver->pixel_h / driver->cell_h;
+        cell_width = driver->pixel_w / driver->cell_w;
+        start_row += box.y1 / cell_height;
+        start_col += box.x1 / cell_width;
+        box.y1 = (start_row - 1) * cell_height;
+        box.x1 = (start_col - 1) * cell_width;
+        box.y2 = min((box.y2 / cell_height + 1) * cell_height, driver->h);
+        box.x2 = min((box.x2 / cell_width + 1) * cell_width, driver->w);
+        if (box.x1 == 0 && box.x2 == driver->w) {
+            dst = driver->bitmap;
+            src = driver->buffer + box.y1 * driver->w * 3;
+            memcpy(dst, src, (box.y2 - box.y1) * driver->w * 3);
+        } else {
+            for (y = box.y1; y < box.y2; ++y) {
+                dst = driver->bitmap + (y - box.y1) * (box.x2 - box.x1) * 3;
+                src = driver->buffer + y * driver->w * 3 + box.x1 * 3;
+                memcpy(dst, src, (box.x2 - box.x1) * 3);
+            }
+        }
+        printf("\033[%d;%dH", start_row, start_col);
+        sixel_encode(driver->bitmap,
+                     (box.x2 - box.x1),
+                     (box.y2 - box.y1),
+                     3,
+                     driver->dither,
+                     driver->output);
+#if SIXEL_VIDEO_DEBUG
+        format = "\033[100;1Hframes: %05d, x: %04d, y: %04d, w: %04d, h: %04d";
+        printf(format, ++frames,
+               box.x1, box.y2,
+               box.x2 - box.x1,
+               box.y2 - box.y1);
+#endif
+#if USE_MUTEX
+        pthread_mutex_unlock(&sixel_mutex);
+#endif
     } else {
         SIXEL_Flip(driver);
     }
@@ -1086,6 +1121,8 @@ static void sixelPollInput(void)
                 SIXEL_Flip(g_driver);
                 break;
             case SIXEL_FOCUSOUT:
+                /* TODO: */
+                /* SIXEL_Flip(g_driver); */
                 break;
             default:
                 if ((key->value >= SIXEL_UP && key->value <= SIXEL_LEFT) ||

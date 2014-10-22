@@ -43,7 +43,7 @@
 #define USE_DECMOUSE 1
 #define USE_FILTER_RECTANGLE 1
 
-static void xsixelFini(void);
+static void sixelFini(void);
 static Bool sixelScreenInit(KdScreenInfo *screen);
 static Bool sixelFinishInitScreen(ScreenPtr pScreen);
 static Bool sixelCreateRes(ScreenPtr pScreen);
@@ -1180,7 +1180,7 @@ static void sixelPollInput(void)
     }
 }
 
-static int xsixelInit(void)
+static int sixelInit(void)
 {
     tty_raw();
     printf("\033[H");
@@ -1204,7 +1204,7 @@ static int xsixelInit(void)
 }
 
 
-static void xsixelFini(void)
+static void sixelFini(void)
 {
     fd_set fdset;
     struct timeval timeout;
@@ -1241,15 +1241,23 @@ static void xsixelFini(void)
     }
 }
 
+static void
+sixelBell(int volume, int pitch, int duration)
+{
+    if (volume && pitch)
+        printf("\007");
+}
+
 void CloseInput(void)
 {
     KdCloseInput();
 }
 
 KdOsFuncs sixelOsFuncs = {
-    .Init = xsixelInit,
-    .Fini = xsixelFini,
+    .Init = sixelInit,
+    .Fini = sixelFini,
     .pollEvents = sixelPollInput,
+    .Bell = sixelBell,
 };
 
 void OsVendorInit (void)

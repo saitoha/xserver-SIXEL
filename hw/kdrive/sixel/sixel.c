@@ -311,7 +311,7 @@ static int SendModifierKey(int state, uint8_t press_state)
 static int GetScancode(int code)
 {
     static u_char tbl[] = {
-         0,  0,  0,  0,  0,  0,  0,  0, 14, 15, 28,  0,  0, 28,  0,  0, /* 0x00 - 0x0f */
+         0,  0,  0,  0,  0,  0,  0,  0, 14, 15, 36,  0,  0, 28,  0,  0, /* 0x00 - 0x0f */
          0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0, /* 0x10 - 0x1f */
         57,  2, 40,  4,  5,  6,  8, 40, 10, 11,  9, 13, 51, 12, 52, 53, /* 0x20 - 0x2f */
         11,  2,  3,  4,  5,  6,  7,  8,  9, 10, 39, 39, 51, 13, 52, 53, /* 0x30 - 0x3f */
@@ -322,7 +322,7 @@ static int GetScancode(int code)
     };
 
     if(code <= 0x7f && tbl[code] > 0) {
-        return tbl[code]+8;
+        return tbl[code] + 8;
     } else {
         return 0;
     }
@@ -331,13 +331,10 @@ static int GetScancode(int code)
 
 static int GetState(int code)
 {
-    if (code < 0x20) {
-        if (GetScancode(code) == 0) {
-            return 4;    /* Control */
-        }
-    }
-    else if (code <= 0x7f) {
+    if (code <= 0x7f) {
         static u_char tbl[] = {
+            4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 4, 4, 4, 0, 4, 4, /* 0x00 - 0x0f */
+            4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 0, 4, 4, 4, 4, /* 0x10 - 0x1f */
             0, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, /* 0x20 - 0x2f */
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, /* 0x30 - 0x3f */
             1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, /* 0x40 - 0x4f */
@@ -347,7 +344,7 @@ static int GetState(int code)
         };
 
         /* Shift */
-        return tbl[code - 0x20];
+        return tbl[code];
     }
     return 0;
 }

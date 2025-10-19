@@ -73,14 +73,20 @@
 
 #define UNWRAP_SCREEN_INFO(x) pScrn->x = pScreenPriv->x
 
-#define SPRITE_PROLOG miPointerScreenPtr PointPriv = \
-    (miPointerScreenPtr)dixLookupPrivate(&pScreen->devPrivates, \
-    miPointerScreenKey); VGAarbiterScreenPtr pScreenPriv = \
-    ((VGAarbiterScreenPtr)dixLookupPrivate(&(pScreen)->devPrivates, \
-    VGAarbiterScreenKey)); PointPriv->spriteFuncs = pScreenPriv->miSprite;
+#define SPRITE_PROLOG                                           \
+    miPointerScreenPtr PointPriv;                               \
+    VGAarbiterScreenPtr pScreenPriv;                            \
+    input_lock();                                               \
+    PointPriv = dixLookupPrivate(&pScreen->devPrivates,         \
+                                 miPointerScreenKey);           \
+    pScreenPriv = dixLookupPrivate(&(pScreen)->devPrivates,     \
+                                   VGAarbiterScreenKey);        \
+    PointPriv->spriteFuncs = pScreenPriv->miSprite;             \
 
-#define SPRITE_EPILOG pScreenPriv->miSprite = PointPriv->spriteFuncs;\
-    PointPriv->spriteFuncs  = &VGAarbiterSpriteFuncs;
+#define SPRITE_EPILOG                                   \
+    pScreenPriv->miSprite = PointPriv->spriteFuncs;     \
+    PointPriv->spriteFuncs  = &VGAarbiterSpriteFuncs;   \
+    input_unlock();
 
 #define WRAP_SPRITE do { pScreenPriv->miSprite = PointPriv->spriteFuncs;\
     	PointPriv->spriteFuncs  = &VGAarbiterSpriteFuncs; 		\
@@ -146,10 +152,8 @@ typedef struct _VGAarbiterGC {
 } VGAarbiterGCRec, *VGAarbiterGCPtr;
 
 /* Screen funcs */
-static void VGAarbiterBlockHandler(ScreenPtr pScreen, void *pTimeout,
-                                   void *pReadmask);
-static void VGAarbiterWakeupHandler(ScreenPtr pScreen,
-                                    unsigned long result, void *pReadmask);
+static void VGAarbiterBlockHandler(ScreenPtr pScreen, void *pTimeout);
+static void VGAarbiterWakeupHandler(ScreenPtr pScreen, int result);
 static Bool VGAarbiterCloseScreen(ScreenPtr pScreen);
 static void VGAarbiterGetImage(DrawablePtr pDrawable, int sx, int sy, int w,
                                int h, unsigned int format,

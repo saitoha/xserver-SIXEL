@@ -600,7 +600,7 @@ are: REQUEST, REQUEST_SIZE_MATCH, REQUEST_AT_LEAST_SIZE,
 REQUEST_FIXED_SIZE, LEGAL_NEW_RESOURCE, and
 VALIDATE_DRAWABLE_AND_GC. Useful byte swapping macros can be found
 in Xserver/include/dix.h: WriteReplyToClient and WriteSwappedDataToClient; and
-in Xserver/include/misc.h: lswapl, lswaps, LengthRestB, LengthRestS,
+in Xserver/include/misc.h: bswap_64, bswap_32, bswap_16, LengthRestB, LengthRestS,
 LengthRestL, SwapRestS, SwapRestL, swapl, swaps, cpswapl, and cpswaps.</para>
 </section>
 </section>
@@ -674,30 +674,22 @@ If WaitForSomething() decides it is about to do something that might block
 routine called BlockHandler().
 <blockquote>
 <programlisting>
-	void BlockHandler(pTimeout, pReadmask)
-		pointer pTimeout;
-		pointer pReadmask;
+	void BlockHandler(void *pTimeout)
 </programlisting>
 </blockquote>
 The types of the arguments are for agreement between the OS and DDX
 implementations,  but the pTimeout is a pointer to the information
-determining how long the block is allowed to last,  and the
-pReadmask is a pointer to the information describing the descriptors
-that will be waited on.
+determining how long the block is allowed to last.
 </para>
 <para>
-In the sample server,  pTimeout is a pointer,  and pReadmask is
-the address of the select() mask for reading.
+In the sample server,  pTimeout is a pointer.
 </para>
 <para>
 The DIX BlockHandler() iterates through the Screens,  for each one calling
 its BlockHandler.  A BlockHandler is declared thus:
 <blockquote>
 <programlisting>
-	void xxxBlockHandler(pScreen, pTimeout, pReadmask)
-		ScreenPtr pScreen;
-		pointer pTimeout;
-		pointer pReadmask;
+	void xxxBlockHandler(ScreenPtr pScreen, void *pTimeout)
 </programlisting>
 </blockquote>
 The arguments are a pointer to the Screen, and the arguments to the
@@ -709,27 +701,20 @@ block,  even if it didn't actually block,  it must call the DIX routine
 WakeupHandler().
 <blockquote>
 <programlisting>
-	void WakeupHandler(result, pReadmask)
-		int result;
-		pointer pReadmask;
+	void WakeupHandler(int result)
 </programlisting>
 </blockquote>
 Once again,  the types are not specified by DIX.  The result is the
-success indicator for the thing that (may have) blocked,
-and the pReadmask is a mask of the descriptors that came active.
-In the sample server,  result is the result from select() (or equivalent
-operating system function),  and pReadmask is
-the address of the select() mask for reading.
+success indicator for the thing that (may have) blocked.
+In the sample server, result is the result from select() (or equivalent
+operating system function).
 </para>
 <para>
 The DIX WakeupHandler() calls each Screen's
 WakeupHandler.  A WakeupHandler is declared thus:
 <blockquote>
 <programlisting>
-	void xxxWakeupHandler(pScreen, result, pReadmask)
-		ScreenPtr pScreen;
-		unsigned long result;
-		pointer pReadmask;
+	void xxxWakeupHandler(ScreenPtr pScreen, int result)
 </programlisting>
 </blockquote>
 The arguments are the Screen, of the Screen, and the arguments to
@@ -741,8 +726,8 @@ block and wakeup handlers (only together) using:
 <blockquote>
 <programlisting>
 	Bool RegisterBlockAndWakeupHandlers (blockHandler, wakeupHandler, blockData)
-		BlockHandlerProcPtr    blockHandler;
-		WakeupHandlerProcPtr   wakeupHandler;
+		ServerBlockHandlerProcPtr    blockHandler;
+		ServerWakeupHandlerProcPtr   wakeupHandler;
 		pointer blockData;
 </programlisting>
 </blockquote>
@@ -752,8 +737,8 @@ memory.  To remove a registered Block handler at other than server reset time
 <blockquote>
 <programlisting>
 	RemoveBlockAndWakeupHandlers (blockHandler, wakeupHandler, blockData)
-		BlockHandlerProcPtr   blockHandler;
-		WakeupHandlerProcPtr  wakeupHandler;
+		ServerBlockHandlerProcPtr   blockHandler;
+		ServerWakeupHandlerProcPtr  wakeupHandler;
 		pointer blockData;
 </programlisting>
 </blockquote>
@@ -761,18 +746,15 @@ All three arguments must match the values passed to
 RegisterBlockAndWakeupHandlers.
 </para>
 <para>
-These registered block handlers are called after the per-screen handlers:
+These registered block handlers are called before the per-screen handlers:
 <blockquote>
 <programlisting>
-	void (*BlockHandler) (blockData, pptv, pReadmask)
-		pointer	blockData;
-		OsTimerPtr pptv;
-		pointer	pReadmask;
+	void (*ServerBlockHandler) (void *blockData, void *pTimeout)
 </programlisting>
 </blockquote>
 </para>
 <para>
-Sometimes block handlers need to adjust the time in a OSTimePtr structure,
+Sometimes block handlers need to adjust the time referenced by pTimeout,
 which on UNIX family systems is generally represented by a struct timeval
 consisting of seconds and microseconds in 32 bit values.
 As a convenience to reduce error prone struct timeval computations which
@@ -780,20 +762,17 @@ require modulus arithmetic and correct overflow behavior in the face of
 millisecond wrapping through 32 bits,
 <blockquote><programlisting>
 
-	void AdjustWaitForDelay(pointer /*waitTime*, unsigned long /* newdelay */)
+	void AdjustWaitForDelay(void *pTimeout, unsigned long newdelay)
 
 </programlisting></blockquote>
 has been provided.
 </para>
 <para>
 Any wakeup handlers registered with RegisterBlockAndWakeupHandlers will
-be called before the Screen handlers:
+be called after the Screen handlers:
 <blockquote><programlisting>
 
-	void (*WakeupHandler) (blockData, err, pReadmask)
-		pointer	blockData;
-		int err;
-		pointer pReadmask;
+	void (*ServerWakeupHandler) (void *blockData, int result)
 </programlisting></blockquote>
 </para>
 <para>
@@ -1992,7 +1971,7 @@ regions, these blocks may need to be reallocated by your region
 software.  For instance, in the sample server, a RegionRec has some
 header information and a pointer to a dynamically allocated rectangle
 list.  Periodically, the rectangle list needs to be expanded with
-Xrealloc(), whereupon the new pointer is remembered in the RegionRec.</para>
+realloc(), whereupon the new pointer is remembered in the RegionRec.</para>
 <para>
 Most of the region operations come in two forms: a function pointer in
 the Screen structure, and a macro.  The server can be compiled so that
@@ -2598,7 +2577,7 @@ VisualRec data structure along with other display characteristics like the
 depth and other numbers.</para>
 <para>
 The allowable DepthRec's and VisualRec's are pointed to by fields in the ScreenRec.
-These are set up when InitOutput() is called; you should Xalloc() appropriate blocks
+These are set up when InitOutput() is called; you should malloc() appropriate blocks
 or use static variables initialized to the correct values.</para>
 </section>
 <section>
@@ -2951,8 +2930,8 @@ The sample server implementation is in Xserver/fb/fbscreen.c.</para>
 		unsigned int subWindowMode;
 
 </programlisting></blockquote>
-SourceValidate should be called by CopyArea/CopyPlane primitives when
-the SourceValidate function pointer in the screen is non-null.  If you know that
+SourceValidate should be called by any primitive that reads from pDrawable.
+If you know that
 you will never need SourceValidate, you can avoid this check.  Currently,
 SourceValidate is used by the mi software cursor code to remove the cursor
 from the screen when the source rectangle overlaps the cursor position.
@@ -3897,7 +3876,7 @@ for CT_NONE, etc. are in Xserver/include/gc.h.)  This routine is
 responsible for incrementing any necessary reference counts (e.g. for
 a pixmap clip mask) for the new clipmask and freeing anything that
 used to be in the GC's clipMask field.  The lists of rectangles passed
-in can be freed with Xfree(), the regions can be destroyed with the
+in can be freed with free(), the regions can be destroyed with the
 RegionDestroy field in the screen, and pixmaps can be destroyed by
 calling the screen's DestroyPixmap function.  DIX and MI code expect
 what they pass in to this to be freed or otherwise inaccessible, and
@@ -5104,9 +5083,6 @@ mi and fb implementations.</para>
 <row><entry><function>WaitForSomething</function></entry><entry><literal>os</literal></entry><entry><para></para></entry></row>
 <row><entry><function>WindowExposures</function></entry><entry><literal>mi</literal></entry><entry><para>Window</para></entry></row>
 <row><entry><function>WriteToClient</function></entry><entry><literal>os</literal></entry><entry><para></para></entry></row>
-<row><entry><function>Xalloc</function></entry><entry><literal>os</literal></entry><entry><para></para></entry></row>
-<row><entry><function>Xfree</function></entry><entry><literal>os</literal></entry><entry><para></para></entry></row>
-<row><entry><function>Xrealloc</function></entry><entry><literal>os</literal></entry><entry><para></para></entry></row>
 	    </tbody>
 	  </tgroup>
 	</table>

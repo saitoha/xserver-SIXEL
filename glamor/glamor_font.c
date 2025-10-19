@@ -45,6 +45,7 @@ glamor_font_get(ScreenPtr screen, FontPtr font)
     unsigned char       c[2];
     CharInfoPtr         glyph;
     unsigned long       count;
+    char                *bits;
 
     if (glamor_priv->glsl_version < 130)
         return NULL;
@@ -54,15 +55,13 @@ glamor_font_get(ScreenPtr screen, FontPtr font)
         privates = calloc(glamor_font_screen_count, sizeof (glamor_font_t));
         if (!privates)
             return NULL;
-        FontSetPrivate(font, glamor_font_private_index, privates);
+        xfont2_font_set_private(font, glamor_font_private_index, privates);
     }
 
     glamor_font = &privates[screen->myNum];
 
     if (glamor_font->realized)
         return glamor_font;
-
-    glamor_font->realized = TRUE;
 
     /* Figure out how many glyphs are in the font */
     num_cols = font->info.lastCol - font->info.firstCol + 1;
@@ -78,8 +77,28 @@ glamor_font_get(ScreenPtr screen, FontPtr font)
     glamor_font->glyph_width_bytes = glyph_width_bytes;
     glamor_font->glyph_height = glyph_height;
 
-    overall_width = glyph_width_bytes * num_cols;
-    overall_height = glyph_height * num_rows;
+    /*
+     * Layout the font two blocks of columns wide.
+     * This avoids a problem with some fonts that are too high to fit.
+     */
+    glamor_font->row_width = glyph_width_bytes * num_cols;
+
+    if (num_rows > 1) {
+       overall_width = glamor_font->row_width * 2;
+       overall_height = glyph_height * ((num_rows + 1) / 2);
+    } else {
+       overall_width = glamor_font->row_width;
+       overall_height = glyph_height;
+    }
+
+    if (overall_width > glamor_priv->max_fbo_size ||
+        overall_height > glamor_priv->max_fbo_size) {
+        /* fallback if we don't fit inside a texture */
+        return NULL;
+    }
+    bits = malloc(overall_width * overall_height);
+    if (!bits)
+        return NULL;
 
     /* Check whether the font has a default character */
     c[0] = font->info.lastRow + 1;
@@ -97,15 +116,8 @@ glamor_font_get(ScreenPtr screen, FontPtr font)
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, glamor_font->texture_id);
 
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-    /* Allocate storage */
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8UI, overall_width, overall_height,
-                 0, GL_RED_INTEGER, GL_UNSIGNED_BYTE, NULL);
-
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 
     /* Paint all of the glyphs */
     for (row = 0; row < num_rows; row++) {
@@ -115,12 +127,39 @@ glamor_font_get(ScreenPtr screen, FontPtr font)
 
             (*font->get_glyphs)(font, 1, c, TwoD16Bit, &count, &glyph);
 
-            if (count)
-                glTexSubImage2D(GL_TEXTURE_2D, 0, col * glyph_width_bytes, row * glyph_height,
-                                GLYPHWIDTHBYTES(glyph), GLYPHHEIGHTPIXELS(glyph),
-                                GL_RED_INTEGER, GL_UNSIGNED_BYTE, glyph->bits);
+            if (count) {
+                char *dst;
+                char *src = glyph->bits;
+                unsigned y;
+
+                dst = bits;
+                /* get offset of start of first row */
+                dst += (row / 2) * glyph_height * overall_width;
+                /* add offset into second row */
+                dst += (row & 1) ? glamor_font->row_width : 0;
+
+                dst += col * glyph_width_bytes;
+                for (y = 0; y < GLYPHHEIGHTPIXELS(glyph); y++) {
+                    memcpy(dst, src, GLYPHWIDTHBYTES(glyph));
+                    dst += overall_width;
+                    src += GLYPHWIDTHBYTESPADDED(glyph);
+                }
+            }
         }
     }
+
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+    glamor_priv->suppress_gl_out_of_memory_logging = true;
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8UI, overall_width, overall_height,
+                 0, GL_RED_INTEGER, GL_UNSIGNED_BYTE, bits);
+    glamor_priv->suppress_gl_out_of_memory_logging = false;
+    if (glGetError() == GL_OUT_OF_MEMORY)
+        return NULL;
+
+    free(bits);
+
+    glamor_font->realized = TRUE;
 
     return glamor_font;
 }
@@ -162,7 +201,7 @@ glamor_unrealize_font(ScreenPtr screen, FontPtr font)
             return TRUE;
 
     free(privates);
-    FontSetPrivate(font, glamor_font_private_index, NULL);
+    xfont2_font_set_private(font, glamor_font_private_index, NULL);
     return TRUE;
 }
 
@@ -175,7 +214,7 @@ glamor_font_init(ScreenPtr screen)
         return TRUE;
 
     if (glamor_font_generation != serverGeneration) {
-        glamor_font_private_index = AllocateFontPrivateIndex();
+        glamor_font_private_index = xfont2_allocate_font_private_index();
         if (glamor_font_private_index == -1)
             return FALSE;
         glamor_font_screen_count = 0;

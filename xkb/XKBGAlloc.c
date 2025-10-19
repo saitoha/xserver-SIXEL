@@ -6,19 +6,19 @@ software and its documentation for any purpose and without
 fee is hereby granted, provided that the above copyright
 notice appear in all copies and that both that copyright
 notice and this permission notice appear in supporting
-documentation, and that the name of Silicon Graphics not be 
-used in advertising or publicity pertaining to distribution 
+documentation, and that the name of Silicon Graphics not be
+used in advertising or publicity pertaining to distribution
 of the software without specific prior written permission.
-Silicon Graphics makes no representation about the suitability 
+Silicon Graphics makes no representation about the suitability
 of this software for any purpose. It is provided "as is"
 without any express or implied warranty.
 
-SILICON GRAPHICS DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS 
-SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY 
+SILICON GRAPHICS DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS
+SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
 AND FITNESS FOR A PARTICULAR PURPOSE. IN NO EVENT SHALL SILICON
-GRAPHICS BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL 
-DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, 
-DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE 
+GRAPHICS BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE,
+DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE
 OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION  WITH
 THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
@@ -409,7 +409,7 @@ XkbGeomRealloc(void **buffer, int szItems, int nrItems,
         return FALSE;
     /* Check if there is need to resize. */
     if (nrItems != szItems)
-        if (!(items = realloc(items, nrItems * itemSize)))
+        if (!(items = reallocarray(items, nrItems, itemSize)))
             return FALSE;
     /* Clear specified items to zero. */
     switch (clearance) {
@@ -588,7 +588,7 @@ XkbAddGeomKeyAlias(XkbGeometryPtr geom, char *aliasStr, char *realStr)
          i++, alias++) {
         if (strncmp(alias->alias, aliasStr, XkbKeyNameLength) == 0) {
             memset(alias->real, 0, XkbKeyNameLength);
-            strncpy(alias->real, realStr, XkbKeyNameLength);
+            memcpy(alias->real, realStr, strnlen(realStr, XkbKeyNameLength));
             return alias;
         }
     }
@@ -598,8 +598,8 @@ XkbAddGeomKeyAlias(XkbGeometryPtr geom, char *aliasStr, char *realStr)
     }
     alias = &geom->key_aliases[geom->num_key_aliases];
     memset(alias, 0, sizeof(XkbKeyAliasRec));
-    strncpy(alias->alias, aliasStr, XkbKeyNameLength);
-    strncpy(alias->real, realStr, XkbKeyNameLength);
+    memcpy(alias->alias, aliasStr, strnlen(aliasStr, XkbKeyNameLength));
+    memcpy(alias->real, realStr, strnlen(realStr, XkbKeyNameLength));
     geom->num_key_aliases++;
     return alias;
 }
@@ -814,8 +814,8 @@ XkbAddGeomOverlayKey(XkbOverlayPtr overlay,
         (_XkbAllocOverlayKeys(row, 1) != Success))
         return NULL;
     key = &row->keys[row->num_keys];
-    strncpy(key->under.name, under, XkbKeyNameLength);
-    strncpy(key->over.name, over, XkbKeyNameLength);
+    memcpy(key->under.name, under, strnlen(under, XkbKeyNameLength));
+    memcpy(key->over.name, over, strnlen(over, XkbKeyNameLength));
     row->num_keys++;
     return key;
 }

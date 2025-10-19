@@ -26,13 +26,13 @@ Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
 
                         All Rights Reserved
 
-Permission to use, copy, modify, and distribute this software and its 
-documentation for any purpose and without fee is hereby granted, 
+Permission to use, copy, modify, and distribute this software and its
+documentation for any purpose and without fee is hereby granted,
 provided that the above copyright notice appear in all copies and that
-both that copyright notice and this permission notice appear in 
+both that copyright notice and this permission notice appear in
 supporting documentation, and that the name of Digital not be
 used in advertising or publicity pertaining to distribution of the
-software without specific, written prior permission.  
+software without specific, written prior permission.
 
 DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
 ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
@@ -87,22 +87,22 @@ ValidateGC(DrawablePtr pDraw, GC * pGC)
  * specified.  ddxen can call this too; they should normally pass
  * NullClient for the client since any access checking should have
  * already been done at a higher level.
- * 
+ *
  * If you have any XIDs, you must use ChangeGCXIDs:
- * 
+ *
  *     CARD32 v[2];
  *     v[0] = FillTiled;
  *     v[1] = pid;
  *     ChangeGCXIDs(client, pGC, GCFillStyle|GCTile, v);
- * 
+ *
  * However, if you need to pass a pointer to a pixmap or font, you must
  * use ChangeGC:
- * 
+ *
  *     ChangeGCVal v[2];
  *     v[0].val = FillTiled;
  *     v[1].ptr = pPixmap;
  *     ChangeGC(client, pGC, GCFillStyle|GCTile, v);
- * 
+ *
  * If you have neither XIDs nor pointers, you can use either function,
  * but ChangeGC will do less work.
  *
@@ -439,7 +439,7 @@ ChangeGCXIDs(ClientPtr client, GC * pGC, BITS32 mask, CARD32 *pC32)
     }
     for (i = Ones(mask); i--;)
         vals[i].val = pC32[i];
-    for (i = 0; i < sizeof(xidfields) / sizeof(*xidfields); ++i) {
+    for (i = 0; i < ARRAY_SIZE(xidfields); ++i) {
         int offset, rc;
 
         if (!(mask & xidfields[i].mask))
@@ -495,7 +495,6 @@ NewGCObject(ScreenPtr pScreen, int depth)
     pGC->graphicsExposures = TRUE;
     pGC->clipOrg.x = 0;
     pGC->clipOrg.y = 0;
-    pGC->clientClipType = CT_NONE;
     pGC->clientClip = (void *) NULL;
     pGC->numInDashList = 2;
     pGC->dash = DefaultDash;
@@ -505,7 +504,7 @@ NewGCObject(ScreenPtr pScreen, int depth)
     pGC->font = defaultFont;
     if (pGC->font)              /* necessary, because open of default font could fail */
         pGC->font->refcnt++;
-    pGC->stipple = pGC->pScreen->PixmapPerDepth[0];
+    pGC->stipple = pGC->pScreen->defaultStipple;
     if (pGC->stipple)
         pGC->stipple->refcnt++;
 
@@ -791,7 +790,7 @@ since we can't create them without already having a GC.  any code
 using the tile or stipple has to set them explicitly anyway,
 since the state of the scratch gc is unknown.  This is OK
 because ChangeGC() has to be able to deal with NULL tiles and
-stipples anyway (in case the CreateGC() call has provided a 
+stipples anyway (in case the CreateGC() call has provided a
 value for them -- we can't set the default tile until the
 client-supplied attributes are installed, since the fgPixel
 is what fills the default tile.  (maybe this comment should
@@ -812,6 +811,7 @@ CreateScratchGC(ScreenPtr pScreen, unsigned depth)
         FreeGC(pGC, (XID) 0);
         pGC = (GCPtr) NULL;
     }
+    pGC->graphicsExposures = FALSE;
     return pGC;
 }
 
@@ -844,7 +844,6 @@ CreateGCperDepth(int screenNum)
     /* do depth 1 separately because it's not included in list */
     if (!(ppGC[0] = CreateScratchGC(pScreen, 1)))
         return FALSE;
-    ppGC[0]->graphicsExposures = FALSE;
     /* Make sure we don't overflow GCperDepth[] */
     if (pScreen->numDepths > MAXFORMATS)
         return FALSE;
@@ -856,7 +855,6 @@ CreateGCperDepth(int screenNum)
                 (void) FreeGC(ppGC[i], (XID) 0);
             return FALSE;
         }
-        ppGC[i + 1]->graphicsExposures = FALSE;
     }
     return TRUE;
 }
@@ -875,8 +873,7 @@ CreateDefaultStipple(int screenNum)
     w = 16;
     h = 16;
     (*pScreen->QueryBestSize) (StippleShape, &w, &h, pScreen);
-    if (!(pScreen->PixmapPerDepth[0] =
-          (*pScreen->CreatePixmap) (pScreen, w, h, 1, 0)))
+    if (!(pScreen->defaultStipple = pScreen->CreatePixmap(pScreen, w, h, 1, 0)))
         return FALSE;
     /* fill stipple with 1 */
     tmpval[0].val = GXcopy;
@@ -884,17 +881,17 @@ CreateDefaultStipple(int screenNum)
     tmpval[2].val = FillSolid;
     pgcScratch = GetScratchGC(1, pScreen);
     if (!pgcScratch) {
-        (*pScreen->DestroyPixmap) (pScreen->PixmapPerDepth[0]);
+        (*pScreen->DestroyPixmap) (pScreen->defaultStipple);
         return FALSE;
     }
     (void) ChangeGC(NullClient, pgcScratch,
                     GCFunction | GCForeground | GCFillStyle, tmpval);
-    ValidateGC((DrawablePtr) pScreen->PixmapPerDepth[0], pgcScratch);
+    ValidateGC((DrawablePtr) pScreen->defaultStipple, pgcScratch);
     rect.x = 0;
     rect.y = 0;
     rect.width = w;
     rect.height = h;
-    (*pgcScratch->ops->PolyFillRect) ((DrawablePtr) pScreen->PixmapPerDepth[0],
+    (*pgcScratch->ops->PolyFillRect) ((DrawablePtr) pScreen->defaultStipple,
                                       pgcScratch, 1, &rect);
     FreeScratchGC(pgcScratch);
     return TRUE;
@@ -905,7 +902,7 @@ FreeDefaultStipple(int screenNum)
 {
     ScreenPtr pScreen = screenInfo.screens[screenNum];
 
-    (*pScreen->DestroyPixmap) (pScreen->PixmapPerDepth[0]);
+    (*pScreen->DestroyPixmap) (pScreen->defaultStipple);
 }
 
 int
@@ -1033,7 +1030,7 @@ SetClipRects(GCPtr pGC, int xOrigin, int yOrigin, int nrects,
 }
 
 /*
-   sets reasonable defaults 
+   sets reasonable defaults
    if we can get a pre-allocated one, use it and mark it as used.
    if we can't, create one out of whole cloth (The Velveteen GC -- if
    you use it often enough it will become real.)
@@ -1067,17 +1064,14 @@ GetScratchGC(unsigned depth, ScreenPtr pScreen)
             pGC->graphicsExposures = FALSE;
             pGC->clipOrg.x = 0;
             pGC->clipOrg.y = 0;
-            if (pGC->clientClipType != CT_NONE)
+            if (pGC->clientClip)
                 (*pGC->funcs->ChangeClip) (pGC, CT_NONE, NULL, 0);
             pGC->stateChanges = GCAllBits;
             return pGC;
         }
     }
     /* if we make it this far, need to roll our own */
-    pGC = CreateScratchGC(pScreen, depth);
-    if (pGC)
-        pGC->graphicsExposures = FALSE;
-    return pGC;
+    return CreateScratchGC(pScreen, depth);
 }
 
 /*

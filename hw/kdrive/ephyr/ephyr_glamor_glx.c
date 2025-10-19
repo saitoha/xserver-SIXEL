@@ -41,6 +41,10 @@
 #include "os.h"
 #include <X11/Xproto.h>
 
+/* until we need geometry shaders GL3.1 should suffice. */
+/* Xephyr has it's own copy of this for build reasons */
+#define GLAMOR_GL_CORE_VER_MAJOR 3
+#define GLAMOR_GL_CORE_VER_MINOR 1
 /** @{
  *
  * global state for Xephyr with glamor.
@@ -53,6 +57,7 @@ static Display *dpy;
 static XVisualInfo *visual_info;
 static GLXFBConfig fb_config;
 Bool ephyr_glamor_gles2;
+Bool ephyr_glamor_skip_present;
 /** @} */
 
 /**
@@ -71,6 +76,8 @@ struct ephyr_glamor {
 
     /* Size of the window that we're rendering to. */
     unsigned width, height;
+
+    GLuint vao, vbo;
 };
 
 static GLint
@@ -189,45 +196,47 @@ ephyr_glamor_set_texture(struct ephyr_glamor *glamor, uint32_t tex)
     glamor->tex = tex;
 }
 
+static void
+ephyr_glamor_set_vertices(struct ephyr_glamor *glamor)
+{
+    glVertexAttribPointer(glamor->texture_shader_position_loc,
+                          2, GL_FLOAT, FALSE, 0, (void *) 0);
+    glVertexAttribPointer(glamor->texture_shader_texcoord_loc,
+                          2, GL_FLOAT, FALSE, 0, (void *) (sizeof (float) * 8));
+
+    glEnableVertexAttribArray(glamor->texture_shader_position_loc);
+    glEnableVertexAttribArray(glamor->texture_shader_texcoord_loc);
+}
+
 void
 ephyr_glamor_damage_redisplay(struct ephyr_glamor *glamor,
                               struct pixman_region16 *damage)
 {
-    /* Redraw the whole screen, since glXSwapBuffers leaves the back
-     * buffer undefined.
+    GLint old_vao;
+
+    /* Skip presenting the output in this mode.  Presentation is
+     * expensive, and if we're just running the X Test suite headless,
+     * nobody's watching.
      */
-    static const float position[] = {
-        -1, -1,
-         1, -1,
-         1,  1,
-        -1,  1,
-    };
-    static const float texcoords[] = {
-        0, 1,
-        1, 1,
-        1, 0,
-        0, 0,
-    };
+    if (ephyr_glamor_skip_present)
+        return;
 
     glXMakeCurrent(dpy, glamor->glx_win, glamor->ctx);
+
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &old_vao);
+    glBindVertexArray(glamor->vao);
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glUseProgram(glamor->texture_shader);
     glViewport(0, 0, glamor->width, glamor->height);
-
-    glVertexAttribPointer(glamor->texture_shader_position_loc,
-                          2, GL_FLOAT, FALSE, 0, position);
-    glVertexAttribPointer(glamor->texture_shader_texcoord_loc,
-                          2, GL_FLOAT, FALSE, 0, texcoords);
-    glEnableVertexAttribArray(glamor->texture_shader_position_loc);
-    glEnableVertexAttribArray(glamor->texture_shader_texcoord_loc);
+    if (!ephyr_glamor_gles2)
+        glDisable(GL_COLOR_LOGIC_OP);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, glamor->tex);
     glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
 
-    glDisableVertexAttribArray(glamor->texture_shader_position_loc);
-    glDisableVertexAttribArray(glamor->texture_shader_texcoord_loc);
+    glBindVertexArray(old_vao);
 
     glXSwapBuffers(dpy, glamor->glx_win);
 }
@@ -266,9 +275,28 @@ ephyr_glamor_process_event(xcb_generic_event_t *xev)
     XUnlockDisplay(dpy);
 }
 
+static int
+ephyr_glx_error_handler(Display * _dpy, XErrorEvent * ev)
+{
+    return 0;
+}
+
 struct ephyr_glamor *
 ephyr_glamor_glx_screen_init(xcb_window_t win)
 {
+    int (*oldErrorHandler) (Display *, XErrorEvent *);
+    static const float position[] = {
+        -1, -1,
+         1, -1,
+         1,  1,
+        -1,  1,
+        0, 1,
+        1, 1,
+        1, 0,
+        0, 0,
+    };
+    GLint old_vao;
+
     GLXContext ctx;
     struct ephyr_glamor *glamor;
     GLXWindow glx_win;
@@ -297,7 +325,28 @@ ephyr_glamor_glx_screen_init(xcb_window_t win)
                        "GLX_EXT_create_context_es2_profile\n");
         }
     } else {
-        ctx = glXCreateContext(dpy, visual_info, NULL, True);
+        if (epoxy_has_glx_extension(dpy, DefaultScreen(dpy),
+                                    "GLX_ARB_create_context")) {
+            static const int context_attribs[] = {
+                GLX_CONTEXT_PROFILE_MASK_ARB,
+                GLX_CONTEXT_CORE_PROFILE_BIT_ARB,
+                GLX_CONTEXT_MAJOR_VERSION_ARB,
+                GLAMOR_GL_CORE_VER_MAJOR,
+                GLX_CONTEXT_MINOR_VERSION_ARB,
+                GLAMOR_GL_CORE_VER_MINOR,
+                0,
+            };
+            oldErrorHandler = XSetErrorHandler(ephyr_glx_error_handler);
+            ctx = glXCreateContextAttribsARB(dpy, fb_config, NULL, True,
+                                             context_attribs);
+            XSync(dpy, False);
+            XSetErrorHandler(oldErrorHandler);
+        } else {
+            ctx = NULL;
+        }
+
+        if (!ctx)
+            ctx = glXCreateContext(dpy, visual_info, NULL, True);
     }
     if (ctx == NULL)
         FatalError("glXCreateContext failed\n");
@@ -309,6 +358,18 @@ ephyr_glamor_glx_screen_init(xcb_window_t win)
     glamor->win = win;
     glamor->glx_win = glx_win;
     ephyr_glamor_setup_texturing_shader(glamor);
+
+    glGenVertexArrays(1, &glamor->vao);
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &old_vao);
+    glBindVertexArray(glamor->vao);
+
+    glGenBuffers(1, &glamor->vbo);
+
+    glBindBuffer(GL_ARRAY_BUFFER, glamor->vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof (position), position, GL_STATIC_DRAW);
+
+    ephyr_glamor_set_vertices(glamor);
+    glBindVertexArray(old_vao);
 
     return glamor;
 }

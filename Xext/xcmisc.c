@@ -101,7 +101,7 @@ ProcXCMiscGetXIDList(ClientPtr client)
     if (stuff->count > UINT32_MAX / sizeof(XID))
         return BadAlloc;
 
-    pids = (XID *) malloc(stuff->count * sizeof(XID));
+    pids = xallocarray(stuff->count, sizeof(XID));
     if (!pids) {
         return BadAlloc;
     }
@@ -142,7 +142,7 @@ ProcXCMiscDispatch(ClientPtr client)
     }
 }
 
-static int
+static int _X_COLD
 SProcXCMiscGetVersion(ClientPtr client)
 {
     REQUEST(xXCMiscGetVersionReq);
@@ -154,7 +154,7 @@ SProcXCMiscGetVersion(ClientPtr client)
     return ProcXCMiscGetVersion(client);
 }
 
-static int
+static int _X_COLD
 SProcXCMiscGetXIDRange(ClientPtr client)
 {
     REQUEST(xReq);
@@ -163,17 +163,18 @@ SProcXCMiscGetXIDRange(ClientPtr client)
     return ProcXCMiscGetXIDRange(client);
 }
 
-static int
+static int _X_COLD
 SProcXCMiscGetXIDList(ClientPtr client)
 {
     REQUEST(xXCMiscGetXIDListReq);
+    REQUEST_SIZE_MATCH(xXCMiscGetXIDListReq);
 
     swaps(&stuff->length);
     swapl(&stuff->count);
     return ProcXCMiscGetXIDList(client);
 }
 
-static int
+static int _X_COLD
 SProcXCMiscDispatch(ClientPtr client)
 {
     REQUEST(xReq);

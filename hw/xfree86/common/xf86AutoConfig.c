@@ -9,10 +9,10 @@
  * the rights to use, copy, modify, merge, publish, distribute, sublicense,
  * and/or sell copies of the Software, and to permit persons to whom the
  * Software is furnished to do so, subject to the following conditions:
- * 
+ *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
@@ -20,12 +20,12 @@
  * OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
  * ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
  * OTHER DEALINGS IN THE SOFTWARE.
- * 
+ *
  * Except as contained in this notice, the name of the copyright holder(s)
  * and author(s) shall not be used in advertising or otherwise to promote
  * the sale, use or other dealings in this Software without prior written
  * authorization from the copyright holder(s) and author(s).
- * 
+ *
  * Author: David Dawes <dawes@XFree86.Org>.
  */
 
@@ -37,6 +37,7 @@
 #include "xf86Parser.h"
 #include "xf86tokens.h"
 #include "xf86Config.h"
+#include "xf86MatchDrivers.h"
 #include "xf86Priv.h"
 #include "xf86_OSlib.h"
 #include "xf86platformBus.h"
@@ -45,7 +46,7 @@
 #include "xf86sbusBus.h"
 #endif
 
-#ifdef sun
+#ifdef __sun
 #include <sys/visual_io.h>
 #include <ctype.h>
 #endif
@@ -89,7 +90,7 @@
 static const char **builtinConfig = NULL;
 static int builtinLines = 0;
 
-static void listPossibleVideoDrivers(char *matches[], int nmatches);
+static void listPossibleVideoDrivers(XF86MatchedDrivers *md);
 
 /*
  * A built-in config file is stored as an array of strings, with each string
@@ -105,7 +106,7 @@ AppendToList(const char *s, const char ***list, int *lines)
     str = xnfstrdup(s);
     for (p = strtok(str, "\n"); p; p = strtok(NULL, "\n")) {
         (*lines)++;
-        *list = xnfrealloc(*list, (*lines + 1) * sizeof(**list));
+        *list = xnfreallocarray(*list, *lines + 1, sizeof(**list));
         newstr = xnfalloc(strlen(p) + 2);
         strcpy(newstr, p);
         strcat(newstr, "\n");
@@ -140,33 +141,67 @@ AppendToConfig(const char *s)
     AppendToList(s, &builtinConfig, &builtinLines);
 }
 
+void
+xf86AddMatchedDriver(XF86MatchedDrivers *md, const char *driver)
+{
+    int j;
+    int nmatches = md->nmatches;
+
+    for (j = 0; j < nmatches; ++j) {
+        if (xf86NameCmp(md->matches[j], driver) == 0) {
+            // Driver already in matched drivers
+            return;
+        }
+    }
+
+    if (nmatches < MATCH_DRIVERS_LIMIT) {
+        md->matches[nmatches] = xnfstrdup(driver);
+        md->nmatches++;
+    }
+    else {
+        xf86Msg(X_WARNING, "Too many drivers registered, can't add %s\n", driver);
+    }
+}
+
 Bool
 xf86AutoConfig(void)
 {
-    char *deviceList[20];
-    char **p;
+    XF86MatchedDrivers md;
+    int i;
     const char **cp;
     char buf[1024];
     ConfigStatus ret;
 
-    listPossibleVideoDrivers(deviceList, 20);
+    /* Make sure config rec is there */
+    if (xf86allocateConfig() != NULL) {
+        ret = CONFIG_OK;    /* OK so far */
+    }
+    else {
+        xf86Msg(X_ERROR, "Couldn't allocate Config record.\n");
+        return FALSE;
+    }
 
-    for (p = deviceList; *p; p++) {
-        snprintf(buf, sizeof(buf), BUILTIN_DEVICE_SECTION, *p, 0, *p);
+    listPossibleVideoDrivers(&md);
+
+    for (i = 0; i < md.nmatches; i++) {
+        snprintf(buf, sizeof(buf), BUILTIN_DEVICE_SECTION,
+                md.matches[i], 0, md.matches[i]);
         AppendToConfig(buf);
-        snprintf(buf, sizeof(buf), BUILTIN_SCREEN_SECTION, *p, 0, *p, 0);
+        snprintf(buf, sizeof(buf), BUILTIN_SCREEN_SECTION,
+                md.matches[i], 0, md.matches[i], 0);
         AppendToConfig(buf);
     }
 
     AppendToConfig(BUILTIN_LAYOUT_SECTION_PRE);
-    for (p = deviceList; *p; p++) {
-        snprintf(buf, sizeof(buf), BUILTIN_LAYOUT_SCREEN_LINE, *p, 0);
+    for (i = 0; i < md.nmatches; i++) {
+        snprintf(buf, sizeof(buf), BUILTIN_LAYOUT_SCREEN_LINE,
+                md.matches[i], 0);
         AppendToConfig(buf);
     }
     AppendToConfig(BUILTIN_LAYOUT_SECTION_POST);
 
-    for (p = deviceList; *p; p++) {
-        free(*p);
+    for (i = 0; i < md.nmatches; i++) {
+        free(md.matches[i]);
     }
 
     xf86MsgVerb(X_DEFAULT, 0,
@@ -190,25 +225,19 @@ xf86AutoConfig(void)
 }
 
 static void
-listPossibleVideoDrivers(char *matches[], int nmatches)
+listPossibleVideoDrivers(XF86MatchedDrivers *md)
 {
-    int i;
-
-    for (i = 0; i < nmatches; i++) {
-        matches[i] = NULL;
-    }
-    i = 0;
+    md->nmatches = 0;
 
 #ifdef XSERVER_PLATFORM_BUS
-    i = xf86PlatformMatchDriver(matches, nmatches);
+    xf86PlatformMatchDriver(md);
 #endif
-#ifdef sun
+#ifdef __sun
     /* Check for driver type based on /dev/fb type and if valid, use
        it instead of PCI bus probe results */
-    if (xf86Info.consoleFd >= 0 && (i < (nmatches - 1))) {
+    if (xf86Info.consoleFd >= 0) {
         struct vis_identifier visid;
         const char *cp;
-        extern char xf86SolarisFbDev[PATH_MAX];
         int iret;
 
         SYSCALL(iret = ioctl(xf86Info.consoleFd, VIS_GETIDENTIFIER, &visid));
@@ -232,7 +261,7 @@ listPossibleVideoDrivers(char *matches[], int nmatches)
 
             /* Special case from before the general case was set */
             if (strcmp(visid.name, "NVDAnvda") == 0) {
-                matches[i++] = xnfstrdup("nvidia");
+                xf86AddMatchedDriver(md, "nvidia");
             }
 
             /* General case - split into vendor name (initial all-caps
@@ -242,55 +271,48 @@ listPossibleVideoDrivers(char *matches[], int nmatches)
                     /* find end of all uppercase vendor section */
                 }
                 if ((cp != visid.name) && (*cp != '\0')) {
-                    char *driverName = xnfstrdup(cp);
                     char *vendorName = xnfstrdup(visid.name);
 
                     vendorName[cp - visid.name] = '\0';
 
-                    matches[i++] = vendorName;
-                    matches[i++] = driverName;
+                    xf86AddMatchedDriver(md, vendorName);
+                    xf86AddMatchedDriver(md, cp);
+
+                    free(vendorName);
                 }
             }
         }
     }
 #endif
 #ifdef __sparc__
-    if (i < (nmatches - 1))
-    {
-        char *sbusDriver = sparcDriverName();
+    char *sbusDriver = sparcDriverName();
 
-        if (sbusDriver)
-            matches[i++] = xnfstrdup(sbusDriver);
-    }
+    if (sbusDriver)
+        xf86AddMatchedDriver(md, sbusDriver);
 #endif
 #ifdef XSERVER_LIBPCIACCESS
-    if (i < (nmatches - 1))
-        i += xf86PciMatchDriver(&matches[i], nmatches - i);
+    xf86PciMatchDriver(md);
 #endif
 
 #if defined(__linux__)
-    matches[i++] = xnfstrdup("modesetting");
+    xf86AddMatchedDriver(md, "modesetting");
 #endif
 
-#if !defined(sun)
+#if !defined(__sun)
     /* Fallback to platform default frame buffer driver */
-    if (i < (nmatches - 1)) {
 #if !defined(__linux__) && defined(__sparc__)
-        matches[i++] = xnfstrdup("wsfb");
+    xf86AddMatchedDriver(md, "wsfb");
 #else
-        matches[i++] = xnfstrdup("fbdev");
+    xf86AddMatchedDriver(md, "fbdev");
 #endif
-    }
-#endif                          /* !sun */
+#endif                          /* !__sun */
 
     /* Fallback to platform default hardware */
-    if (i < (nmatches - 1)) {
 #if defined(__i386__) || defined(__amd64__) || defined(__hurd__)
-        matches[i++] = xnfstrdup("vesa");
-#elif defined(__sparc__) && !defined(sun)
-        matches[i++] = xnfstrdup("sunffb");
+    xf86AddMatchedDriver(md, "vesa");
+#elif defined(__sparc__) && !defined(__sun)
+    xf86AddMatchedDriver(md, "sunffb");
 #endif
-    }
 }
 
 /* copy a screen section and enter the desired driver
@@ -336,8 +358,8 @@ GDevPtr
 autoConfigDevice(GDevPtr preconf_device)
 {
     GDevPtr ptr = NULL;
-    char *matches[20];          /* If we have more than 20 drivers we're in trouble */
-    int num_matches = 0, num_screens = 0, i;
+    XF86MatchedDrivers md;
+    int num_screens = 0, i;
     screenLayoutPtr slp;
 
     if (!xf86configptr) {
@@ -364,10 +386,10 @@ autoConfigDevice(GDevPtr preconf_device)
     }
     if (!ptr->driver) {
         /* get all possible video drivers and count them */
-        listPossibleVideoDrivers(matches, 20);
-        for (; matches[num_matches]; num_matches++) {
+        listPossibleVideoDrivers(&md);
+        for (i = 0; i < md.nmatches; i++) {
             xf86Msg(X_DEFAULT, "Matched %s as autoconfigured driver %d\n",
-                    matches[num_matches], num_matches);
+                    md.matches[i], i);
         }
 
         slp = xf86ConfigLayout.screens;
@@ -377,12 +399,12 @@ autoConfigDevice(GDevPtr preconf_device)
              * minus one for the already existing first one
              * plus one for the terminating NULL */
             for (; slp[num_screens].screen; num_screens++);
-            xf86ConfigLayout.screens = xnfcalloc(num_screens + num_matches,
+            xf86ConfigLayout.screens = xnfcalloc(num_screens + md.nmatches,
                                                  sizeof(screenLayoutRec));
             xf86ConfigLayout.screens[0] = slp[0];
 
             /* do the first match and set that for the original first screen */
-            ptr->driver = matches[0];
+            ptr->driver = md.matches[0];
             if (!xf86ConfigLayout.screens[0].screen->device) {
                 xf86ConfigLayout.screens[0].screen->device = ptr;
                 ptr->myScreenSection = xf86ConfigLayout.screens[0].screen;
@@ -390,9 +412,8 @@ autoConfigDevice(GDevPtr preconf_device)
 
             /* for each other driver found, copy the first screen, insert it
              * into the list of screens and set the driver */
-            i = 0;
-            while (i++ < num_matches) {
-                if (!copyScreen(slp[0].screen, ptr, i, matches[i]))
+            for (i = 1; i < md.nmatches; i++) {
+                if (!copyScreen(slp[0].screen, ptr, i, md.matches[i]))
                     return NULL;
             }
 
@@ -401,19 +422,17 @@ autoConfigDevice(GDevPtr preconf_device)
              *
              * TODO Handle rest of multiple screen sections */
             for (i = 1; i < num_screens; i++) {
-                xf86ConfigLayout.screens[i + num_matches] = slp[i];
+                xf86ConfigLayout.screens[i + md.nmatches] = slp[i];
             }
-            xf86ConfigLayout.screens[num_screens + num_matches - 1].screen =
+            xf86ConfigLayout.screens[num_screens + md.nmatches - 1].screen =
                 NULL;
             free(slp);
         }
         else {
             /* layout does not have any screens, not much to do */
-            ptr->driver = matches[0];
-            for (i = 1; matches[i]; i++) {
-                if (matches[i] != matches[0]) {
-                    free(matches[i]);
-                }
+            ptr->driver = md.matches[0];
+            for (i = 1; i < md.nmatches; i++) {
+                free(md.matches[i]);
             }
         }
     }

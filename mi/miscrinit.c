@@ -45,7 +45,7 @@ from The Open Group.
 
 /* We use this structure to propogate some information from miScreenInit to
  * miCreateScreenResources.  miScreenInit allocates the structure, fills it
- * in, and puts it into pScreen->devPrivate.  miCreateScreenResources 
+ * in, and puts it into pScreen->devPrivate.  miCreateScreenResources
  * extracts the info and frees the structure.  We could've accomplished the
  * same thing by adding fields to the screen structure, but they would have
  * ended up being redundant, and would have exposed this mi implementation
@@ -122,6 +122,12 @@ static Bool
 miCloseScreen(ScreenPtr pScreen)
 {
     return ((*pScreen->DestroyPixmap) ((PixmapPtr) pScreen->devPrivate));
+}
+
+void
+miSourceValidate(DrawablePtr pDrawable, int x, int y, int w, int h,
+                 unsigned int subWindowMode)
+{
 }
 
 /* With the introduction of pixmap privates, the "screen pixmap" can no
@@ -243,7 +249,7 @@ miScreenInit(ScreenPtr pScreen, void *pbits,  /* pointer to screen bits */
     }
     /* else CloseScreen */
     /* QueryBestSize, SaveScreen, GetImage, GetSpans */
-    pScreen->SourceValidate = (SourceValidateProcPtr) 0;
+    pScreen->SourceValidate = miSourceValidate;
     /* CreateWindow, DestroyWindow, PositionWindow, ChangeWindowAttributes */
     /* RealizeWindow, UnrealizeWindow */
     pScreen->ValidateTree = miValidateTree;
@@ -253,19 +259,19 @@ miScreenInit(ScreenPtr pScreen, void *pbits,  /* pointer to screen bits */
     pScreen->ClearToBackground = miClearToBackground;
     pScreen->ClipNotify = (ClipNotifyProcPtr) 0;
     pScreen->RestackWindow = (RestackWindowProcPtr) 0;
+    pScreen->PaintWindow = miPaintWindow;
     /* CreatePixmap, DestroyPixmap */
     /* RealizeFont, UnrealizeFont */
     /* CreateGC */
     /* CreateColormap, DestroyColormap, InstallColormap, UninstallColormap */
     /* ListInstalledColormaps, StoreColors, ResolveColor */
     /* BitmapToRegion */
-    pScreen->SendGraphicsExpose = miSendGraphicsExpose;
     pScreen->BlockHandler = (ScreenBlockHandlerProcPtr) NoopDDA;
     pScreen->WakeupHandler = (ScreenWakeupHandlerProcPtr) NoopDDA;
     pScreen->MarkWindow = miMarkWindow;
     pScreen->MarkOverlappedWindows = miMarkOverlappedWindows;
     pScreen->MoveWindow = miMoveWindow;
-    pScreen->ResizeWindow = miSlideAndSizeWindow;
+    pScreen->ResizeWindow = miResizeWindow;
     pScreen->GetLayerWindow = miGetLayerWindow;
     pScreen->HandleExposures = miHandleValidateExposures;
     pScreen->ReparentWindow = (ReparentWindowProcPtr) 0;

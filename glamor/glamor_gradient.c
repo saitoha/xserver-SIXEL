@@ -32,17 +32,13 @@
 
 #include "glamor_priv.h"
 
-#ifdef RENDER
-
 #define LINEAR_SMALL_STOPS (6 + 2)
 #define LINEAR_LARGE_STOPS (16 + 2)
 
 #define RADIAL_SMALL_STOPS (6 + 2)
 #define RADIAL_LARGE_STOPS (16 + 2)
 
-#ifdef GLAMOR_GRADIENT_SHADER
-
-static const char *
+static char *
 _glamor_create_getcolor_fs_source(ScreenPtr screen, int stops_count,
                                   int use_array)
 {
@@ -56,27 +52,33 @@ _glamor_create_getcolor_fs_source(ScreenPtr screen, int stops_count,
 	    "vec4 get_color(float stop_len)\n"\
 	    "{\n"\
 	    "    int i = 0;\n"\
-	    "    float new_alpha; \n"\
+	    "    vec4 stop_color_before;\n"\
 	    "    vec4 gradient_color;\n"\
+	    "    float stop_delta;\n"\
 	    "    float percentage; \n"\
-	    "    for(i = 0; i < n_stop - 1; i++) {\n"\
+	    "    \n"\
+	    "    if(stop_len < stops[0])\n"\
+	    "        return vec4(0.0, 0.0, 0.0, 0.0); \n"\
+	    "    for(i = 1; i < n_stop; i++) {\n"\
 	    "        if(stop_len < stops[i])\n"\
 	    "            break; \n"\
 	    "    }\n"\
+	    "    if(i == n_stop)\n"\
+	    "        return vec4(0.0, 0.0, 0.0, 0.0); \n"\
 	    "    \n"\
-	    "    if(stops[i] - stops[i-1] > 2.0)\n"\
+	    "    stop_color_before = stop_colors[i-1];\n"\
+	    "    stop_delta = stops[i] - stops[i-1];\n"\
+	    "    if(stop_delta > 2.0)\n"\
 	    "        percentage = 0.0;\n" /*For comply with pixman, walker->stepper overflow.*/\
-	    "    else if(stops[i] - stops[i-1] < 0.000001)\n"\
+	    "    else if(stop_delta < 0.000001)\n"\
 	    "        percentage = 0.0;\n"\
 	    "    else \n"\
-	    "        percentage = (stop_len - stops[i-1])/(stops[i] - stops[i-1]);\n"\
-	    "    new_alpha = percentage * stop_colors[i].a + \n"\
-	    "                       (1.0-percentage) * stop_colors[i-1].a; \n"\
-	    "    gradient_color = vec4((percentage * stop_colors[i].rgb \n"\
-	    "                          + (1.0-percentage) * stop_colors[i-1].rgb)*new_alpha, \n"\
-	    "                          new_alpha);\n"\
+	    "        percentage = (stop_len - stops[i-1])/stop_delta;\n"\
 	    "    \n"\
-	    "    return gradient_color;\n"\
+	    "    gradient_color = stop_color_before;\n"\
+	    "    if(percentage != 0.0)\n"\
+	    "        gradient_color += (stop_colors[i] - gradient_color)*percentage;\n"\
+	    "    return vec4(gradient_color.rgb * gradient_color.a, gradient_color.a);\n"\
 	    "}\n"
 
     /* Because the array access for shader is very slow, the performance is very low
@@ -103,73 +105,66 @@ _glamor_create_getcolor_fs_source(ScreenPtr screen, int stops_count,
         "\n"
         "vec4 get_color(float stop_len)\n"
         "{\n"
-        "    float stop_after;\n"
-        "    float stop_before;\n"
         "    vec4 stop_color_before;\n"
         "    vec4 stop_color_after;\n"
-        "    float new_alpha; \n"
         "    vec4 gradient_color;\n"
+        "    float stop_before;\n"
+        "    float stop_delta;\n"
         "    float percentage; \n"
         "    \n"
         "    if((stop_len < stop0) && (n_stop >= 1)) {\n"
-        "        stop_color_before = stop_color0;\n"
-        "        stop_color_after = stop_color0;\n"
-        "        stop_after = stop0;\n"
-        "        stop_before = stop0;\n"
+        "        stop_color_before = vec4(0.0, 0.0, 0.0, 0.0);\n"
+        "        stop_delta = 0.0;\n"
         "    } else if((stop_len < stop1) && (n_stop >= 2)) {\n"
         "        stop_color_before = stop_color0;\n"
         "        stop_color_after = stop_color1;\n"
-        "        stop_after = stop1;\n"
         "        stop_before = stop0;\n"
+        "        stop_delta = stop1 - stop0;\n"
         "    } else if((stop_len < stop2) && (n_stop >= 3)) {\n"
         "        stop_color_before = stop_color1;\n"
         "        stop_color_after = stop_color2;\n"
-        "        stop_after = stop2;\n"
         "        stop_before = stop1;\n"
+        "        stop_delta = stop2 - stop1;\n"
         "    } else if((stop_len < stop3) && (n_stop >= 4)){\n"
         "        stop_color_before = stop_color2;\n"
         "        stop_color_after = stop_color3;\n"
-        "        stop_after = stop3;\n"
         "        stop_before = stop2;\n"
+        "        stop_delta = stop3 - stop2;\n"
         "    } else if((stop_len < stop4) && (n_stop >= 5)){\n"
         "        stop_color_before = stop_color3;\n"
         "        stop_color_after = stop_color4;\n"
-        "        stop_after = stop4;\n"
         "        stop_before = stop3;\n"
+        "        stop_delta = stop4 - stop3;\n"
         "    } else if((stop_len < stop5) && (n_stop >= 6)){\n"
         "        stop_color_before = stop_color4;\n"
         "        stop_color_after = stop_color5;\n"
-        "        stop_after = stop5;\n"
         "        stop_before = stop4;\n"
+        "        stop_delta = stop5 - stop4;\n"
         "    } else if((stop_len < stop6) && (n_stop >= 7)){\n"
         "        stop_color_before = stop_color5;\n"
         "        stop_color_after = stop_color6;\n"
-        "        stop_after = stop6;\n"
         "        stop_before = stop5;\n"
+        "        stop_delta = stop6 - stop5;\n"
         "    } else if((stop_len < stop7) && (n_stop >= 8)){\n"
         "        stop_color_before = stop_color6;\n"
         "        stop_color_after = stop_color7;\n"
-        "        stop_after = stop7;\n"
         "        stop_before = stop6;\n"
+        "        stop_delta = stop7 - stop6;\n"
         "    } else {\n"
-        "        stop_color_before = stop_color7;\n"
-        "        stop_color_after = stop_color7;\n"
-        "        stop_after = stop7;\n"
-        "        stop_before = stop7;\n"
+        "        stop_color_before = vec4(0.0, 0.0, 0.0, 0.0);\n"
+        "        stop_delta = 0.0;\n"
         "    }\n"
-        "    if(stop_after - stop_before > 2.0)\n"
+        "    if(stop_delta > 2.0)\n"
         "        percentage = 0.0;\n" //For comply with pixman, walker->stepper overflow.
-        "    else if(stop_after - stop_before < 0.000001)\n"
+        "    else if(stop_delta < 0.000001)\n"
         "        percentage = 0.0;\n"
-        "    else \n"
-        "        percentage = (stop_len - stop_before)/(stop_after - stop_before);\n"
-        "    new_alpha = percentage * stop_color_after.a + \n"
-        "                       (1.0-percentage) * stop_color_before.a; \n"
-        "    gradient_color = vec4((percentage * stop_color_after.rgb \n"
-        "                          + (1.0-percentage) * stop_color_before.rgb)*new_alpha, \n"
-        "                          new_alpha);\n"
+        "    else\n"
+        "        percentage = (stop_len - stop_before)/stop_delta;\n"
         "    \n"
-        "    return gradient_color;\n"
+        "    gradient_color = stop_color_before;\n"
+        "    if(percentage != 0.0)\n"
+        "        gradient_color += (stop_color_after - gradient_color)*percentage;\n"
+        "    return vec4(gradient_color.rgb * gradient_color.a, gradient_color.a);\n"
         "}\n";
 
     if (use_array) {
@@ -315,7 +310,7 @@ _glamor_create_radial_gradient_program(ScreenPtr screen, int stops_count,
 	    "}\n"\
 	    "\n"\
             "%s\n" /* fs_getcolor_source */
-    const char *fs_getcolor_source;
+    char *fs_getcolor_source;
 
     glamor_priv = glamor_get_screen_private(screen);
 
@@ -348,6 +343,7 @@ _glamor_create_radial_gradient_program(ScreenPtr screen, int stops_count,
     fs_prog = glamor_compile_glsl_prog(GL_FRAGMENT_SHADER, gradient_fs);
 
     free(gradient_fs);
+    free(fs_getcolor_source);
 
     glAttachShader(gradient_prog, vs_prog);
     glAttachShader(gradient_prog, fs_prog);
@@ -460,18 +456,10 @@ _glamor_create_linear_gradient_program(ScreenPtr screen, int stops_count,
 	    "float get_stop_len()\n"\
 	    "{\n"\
 	    "    vec3 tmp = vec3(source_texture.x, source_texture.y, 1.0);\n"\
-	    "    float len_percentage;\n"\
 	    "    float distance;\n"\
 	    "    float _p1_distance;\n"\
 	    "    float _pt_distance;\n"\
 	    "    float y_dist;\n"\
-	    "    float stop_after;\n"\
-	    "    float stop_before;\n"\
-	    "    vec4 stop_color_before;\n"\
-	    "    vec4 stop_color_after;\n"\
-	    "    float new_alpha; \n"\
-	    "    vec4 gradient_color;\n"\
-	    "    float percentage; \n"\
 	    "    vec3 source_texture_trans = transform_mat * tmp;\n"\
 	    "    \n"\
 	    "    if(hor_ver == 0) { \n" /*Normal case.*/\
@@ -486,19 +474,17 @@ _glamor_create_linear_gradient_program(ScreenPtr screen, int stops_count,
 	    "        _pt_distance = pt_distance * source_texture_trans.z;\n"\
 	    "    } \n"\
 	    "    \n"\
-	    "    distance = distance - _p1_distance; \n"\
+	    "    distance = (distance - _p1_distance) / _pt_distance;\n"\
 	    "    \n"\
 	    "    if(repeat_type == %d){\n" /* repeat normal*/\
-	    "        distance = mod(distance, _pt_distance);\n"\
+	    "        distance = fract(distance);\n"\
 	    "    }\n"\
 	    "    \n"\
 	    "    if(repeat_type == %d) {\n" /* repeat reflect*/\
-	    "        distance = abs(mod(distance + _pt_distance, 2.0 * _pt_distance) - _pt_distance);\n"\
+	    "        distance = abs(fract(distance * 0.5 + 0.5) * 2.0 - 1.0);\n"\
 	    "    }\n"\
 	    "    \n"\
-	    "    len_percentage = distance/(_pt_distance);\n"\
-	    "    \n"\
-	    "    return len_percentage;\n"\
+	    "    return distance;\n"\
 	    "}\n"\
 	    "\n"\
 	    "void main()\n"\
@@ -508,7 +494,7 @@ _glamor_create_linear_gradient_program(ScreenPtr screen, int stops_count,
 	    "}\n"\
 	    "\n"\
             "%s" /* fs_getcolor_source */
-    const char *fs_getcolor_source;
+    char *fs_getcolor_source;
 
     glamor_priv = glamor_get_screen_private(screen);
 
@@ -537,6 +523,7 @@ _glamor_create_linear_gradient_program(ScreenPtr screen, int stops_count,
 
     fs_prog = glamor_compile_glsl_prog(GL_FRAGMENT_SHADER, gradient_fs);
     free(gradient_fs);
+    free(fs_getcolor_source);
 
     glAttachShader(gradient_prog, vs_prog);
     glAttachShader(gradient_prog, fs_prog);
@@ -584,27 +571,6 @@ glamor_init_gradient_shader(ScreenPtr screen)
     _glamor_create_radial_gradient_program(screen, RADIAL_LARGE_STOPS, 0);
 }
 
-void
-glamor_fini_gradient_shader(ScreenPtr screen)
-{
-    glamor_screen_private *glamor_priv;
-    int i = 0;
-
-    glamor_priv = glamor_get_screen_private(screen);
-    glamor_make_current(glamor_priv);
-
-    for (i = 0; i < 3; i++) {
-        /* Linear Gradient */
-        if (glamor_priv->gradient_prog[SHADER_GRADIENT_LINEAR][i])
-            glDeleteProgram(glamor_priv->gradient_prog
-                            [SHADER_GRADIENT_LINEAR][i]);
-
-        if (glamor_priv->gradient_prog[SHADER_GRADIENT_RADIAL][i])
-            glDeleteProgram(glamor_priv->gradient_prog
-                            [SHADER_GRADIENT_RADIAL][i]);
-    }
-}
-
 static void
 _glamor_gradient_convert_trans_matrix(PictTransform *from, float to[3][3],
                                       int width, int height, int normalize)
@@ -626,7 +592,7 @@ _glamor_gradient_convert_trans_matrix(PictTransform *from, float to[3][3],
      * So, to get the correct v_s, we need to cacula1 the matrix: (A*T*inv(A)), and
      * we name this matrix T_s.
      *
-     * Firstly, because A is for the scale convertion, we find
+     * Firstly, because A is for the scale conversion, we find
      *      --         --
      *      |1/w  0   0 |
      * A =  | 0  1/h  0 |
@@ -670,12 +636,12 @@ _glamor_gradient_set_pixmap_destination(ScreenPtr screen,
                                         PicturePtr dst_picture,
                                         GLfloat *xscale, GLfloat *yscale,
                                         int x_source, int y_source,
-                                        float vertices[8],
-                                        float tex_vertices[8],
                                         int tex_normalize)
 {
     glamor_pixmap_private *pixmap_priv;
     PixmapPtr pixmap = NULL;
+    GLfloat *v;
+    char *vbo_offset;
 
     pixmap = glamor_get_drawable_pixmap(dst_picture->pDrawable);
     pixmap_priv = glamor_get_pixmap_private(pixmap);
@@ -684,14 +650,16 @@ _glamor_gradient_set_pixmap_destination(ScreenPtr screen,
         return 0;
     }
 
-    glamor_set_destination_pixmap_priv_nc(pixmap_priv);
+    glamor_set_destination_pixmap_priv_nc(glamor_priv, pixmap, pixmap_priv);
 
-    pixmap_priv_get_dest_scale(pixmap_priv, xscale, yscale);
+    pixmap_priv_get_dest_scale(pixmap, pixmap_priv, xscale, yscale);
 
     DEBUGF("xscale = %f, yscale = %f,"
            " x_source = %d, y_source = %d, width = %d, height = %d\n",
            *xscale, *yscale, x_source, y_source,
            dst_picture->pDrawable->width, dst_picture->pDrawable->height);
+
+    v = glamor_get_vbo_space(screen, 16 * sizeof(GLfloat), &vbo_offset);
 
     glamor_set_normalize_vcoords_tri_strip(*xscale, *yscale,
                                            0, 0,
@@ -699,7 +667,7 @@ _glamor_gradient_set_pixmap_destination(ScreenPtr screen,
                                                     width),
                                            (INT16) (dst_picture->pDrawable->
                                                     height),
-                                           vertices);
+                                           v);
 
     if (tex_normalize) {
         glamor_set_normalize_tcoords_tri_stripe(*xscale, *yscale,
@@ -710,7 +678,7 @@ _glamor_gradient_set_pixmap_destination(ScreenPtr screen,
                                                 (INT16) (dst_picture->
                                                          pDrawable->height +
                                                          y_source),
-                                                tex_vertices);
+                                                &v[8]);
     }
     else {
         glamor_set_tcoords_tri_strip(x_source, y_source,
@@ -718,28 +686,29 @@ _glamor_gradient_set_pixmap_destination(ScreenPtr screen,
                                      x_source,
                                      (INT16) (dst_picture->pDrawable->height) +
                                      y_source,
-                                     tex_vertices);
+                                     &v[8]);
     }
 
     DEBUGF("vertices --> leftup : %f X %f, rightup: %f X %f,"
            "rightbottom: %f X %f, leftbottom : %f X %f\n",
-           vertices[0], vertices[1], vertices[2], vertices[3],
-           vertices[4], vertices[5], vertices[6], vertices[7]);
+           v[0], v[1], v[2], v[3],
+           v[4], v[5], v[6], v[7]);
     DEBUGF("tex_vertices --> leftup : %f X %f, rightup: %f X %f,"
            "rightbottom: %f X %f, leftbottom : %f X %f\n",
-           tex_vertices[0], tex_vertices[1], tex_vertices[2], tex_vertices[3],
-           tex_vertices[4], tex_vertices[5], tex_vertices[6], tex_vertices[7]);
+           v[8], v[9], v[10], v[11],
+           v[12], v[13], v[14], v[15]);
 
     glamor_make_current(glamor_priv);
 
     glVertexAttribPointer(GLAMOR_VERTEX_POS, 2, GL_FLOAT,
-                          GL_FALSE, 0, vertices);
+                          GL_FALSE, 0, vbo_offset);
     glVertexAttribPointer(GLAMOR_VERTEX_SOURCE, 2, GL_FLOAT,
-                          GL_FALSE, 0, tex_vertices);
+                          GL_FALSE, 0, vbo_offset + 8 * sizeof(GLfloat));
 
     glEnableVertexAttribArray(GLAMOR_VERTEX_POS);
     glEnableVertexAttribArray(GLAMOR_VERTEX_SOURCE);
 
+    glamor_put_vbo_space(screen);
     return 1;
 }
 
@@ -781,13 +750,13 @@ _glamor_gradient_set_stops(PicturePtr src_picture, PictGradient *pgradient,
         stop_colors[1] = 0.0;   //G
         stop_colors[2] = 0.0;   //B
         stop_colors[3] = 0.0;   //Alpha
-        n_stops[0] = -(float) INT_MAX;  //should be small enough.
+        n_stops[0] = n_stops[1];
 
         stop_colors[0 + (count - 1) * 4] = 0.0; //R
         stop_colors[1 + (count - 1) * 4] = 0.0; //G
         stop_colors[2 + (count - 1) * 4] = 0.0; //B
         stop_colors[3 + (count - 1) * 4] = 0.0; //Alpha
-        n_stops[count - 1] = (float) INT_MAX;   //should be large enough.
+        n_stops[count - 1] = n_stops[count - 2];
         break;
     case PIXMAN_REPEAT_NORMAL:
         REPEAT_FILL_STOPS(0, count - 2);
@@ -835,13 +804,11 @@ glamor_generate_radial_gradient_picture(ScreenPtr screen,
     PixmapPtr pixmap = NULL;
     GLint gradient_prog = 0;
     int error;
-    float tex_vertices[8];
     int stops_count = 0;
     int count = 0;
     GLfloat *stop_colors = NULL;
     GLfloat *n_stops = NULL;
     GLfloat xscale, yscale;
-    float vertices[8];
     float transform_mat[3][3];
     static const float identity_mat[3][3] = { {1.0, 0.0, 0.0},
     {0.0, 1.0, 0.0},
@@ -906,7 +873,7 @@ glamor_generate_radial_gradient_picture(ScreenPtr screen,
 
     stops_count = src_picture->pSourcePict->radial.nstops + 2;
 
-    /* Because the max value of nstops is unkown, so create a program
+    /* Because the max value of nstops is unknown, so create a program
        when nstops > LINEAR_LARGE_STOPS. */
     if (stops_count <= RADIAL_SMALL_STOPS) {
         gradient_prog = glamor_priv->gradient_prog[SHADER_GRADIENT_RADIAL][0];
@@ -992,18 +959,20 @@ glamor_generate_radial_gradient_picture(ScreenPtr screen,
 
     if (!_glamor_gradient_set_pixmap_destination
         (screen, glamor_priv, dst_picture, &xscale, &yscale, x_source, y_source,
-         vertices, tex_vertices, 0))
+         0))
         goto GRADIENT_FAIL;
+
+    glamor_set_alu(screen, GXcopy);
 
     /* Set all the stops and colors to shader. */
     if (stops_count > RADIAL_SMALL_STOPS) {
-        stop_colors = malloc(4 * stops_count * sizeof(float));
+        stop_colors = xallocarray(stops_count, 4 * sizeof(float));
         if (stop_colors == NULL) {
             ErrorF("Failed to allocate stop_colors memory.\n");
             goto GRADIENT_FAIL;
         }
 
-        n_stops = malloc(stops_count * sizeof(float));
+        n_stops = xallocarray(stops_count, sizeof(float));
         if (n_stops == NULL) {
             ErrorF("Failed to allocate n_stops memory.\n");
             goto GRADIENT_FAIL;
@@ -1144,7 +1113,6 @@ glamor_generate_linear_gradient_picture(ScreenPtr screen,
     float pt_distance;
     float p1_distance;
     GLfloat cos_val;
-    float tex_vertices[8];
     int stops_count = 0;
     GLfloat *stop_colors = NULL;
     GLfloat *n_stops = NULL;
@@ -1152,7 +1120,6 @@ glamor_generate_linear_gradient_picture(ScreenPtr screen,
     float slope;
     GLfloat xscale, yscale;
     GLfloat pt1[2], pt2[2];
-    float vertices[8];
     float transform_mat[3][3];
     static const float identity_mat[3][3] = { {1.0, 0.0, 0.0},
     {0.0, 1.0, 0.0},
@@ -1215,7 +1182,7 @@ glamor_generate_linear_gradient_picture(ScreenPtr screen,
 
     stops_count = src_picture->pSourcePict->linear.nstops + 2;
 
-    /* Because the max value of nstops is unkown, so create a program
+    /* Because the max value of nstops is unknown, so create a program
        when nstops > LINEAR_LARGE_STOPS. */
     if (stops_count <= LINEAR_SMALL_STOPS) {
         gradient_prog = glamor_priv->gradient_prog[SHADER_GRADIENT_LINEAR][0];
@@ -1308,8 +1275,10 @@ glamor_generate_linear_gradient_picture(ScreenPtr screen,
 
     if (!_glamor_gradient_set_pixmap_destination
         (screen, glamor_priv, dst_picture, &xscale, &yscale, x_source, y_source,
-         vertices, tex_vertices, 1))
+         1))
         goto GRADIENT_FAIL;
+
+    glamor_set_alu(screen, GXcopy);
 
     /* Normalize the PTs. */
     glamor_set_normalize_pt(xscale, yscale,
@@ -1336,13 +1305,13 @@ glamor_generate_linear_gradient_picture(ScreenPtr screen,
 
     /* Set all the stops and colors to shader. */
     if (stops_count > LINEAR_SMALL_STOPS) {
-        stop_colors = malloc(4 * stops_count * sizeof(float));
+        stop_colors = xallocarray(stops_count, 4 * sizeof(float));
         if (stop_colors == NULL) {
             ErrorF("Failed to allocate stop_colors memory.\n");
             goto GRADIENT_FAIL;
         }
 
-        n_stops = malloc(stops_count * sizeof(float));
+        n_stops = xallocarray(stops_count, sizeof(float));
         if (n_stops == NULL) {
             ErrorF("Failed to allocate n_stops memory.\n");
             goto GRADIENT_FAIL;
@@ -1423,7 +1392,7 @@ glamor_generate_linear_gradient_picture(ScreenPtr screen,
     }
     else {
         /* The slope need to compute here. In shader, the viewport set will change
-           the orginal slope and the slope which is vertical to it will not be correct. */
+           the original slope and the slope which is vertical to it will not be correct. */
         slope = -(float) (src_picture->pSourcePict->linear.p2.x
                           - src_picture->pSourcePict->linear.p1.x) /
             (float) (src_picture->pSourcePict->linear.p2.y
@@ -1471,7 +1440,3 @@ glamor_generate_linear_gradient_picture(ScreenPtr screen,
     glDisableVertexAttribArray(GLAMOR_VERTEX_SOURCE);
     return NULL;
 }
-
-#endif                          /* End of GLAMOR_GRADIENT_SHADER */
-
-#endif                          /* End of RENDER */

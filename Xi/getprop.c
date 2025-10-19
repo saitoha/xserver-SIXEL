@@ -72,7 +72,7 @@ extern int ExtEventIndex;
  *
  */
 
-int
+int _X_COLD
 SProcXGetDeviceDontPropagateList(ClientPtr client)
 {
     REQUEST(xGetDeviceDontPropagateListReq);
@@ -118,7 +118,7 @@ ProcXGetDeviceDontPropagateList(ClientPtr client)
             ClassFromMask(NULL, others->dontPropagateMask[i], i, &count, COUNT);
         if (count) {
             rep.count = count;
-            buf = (XEventClass *) malloc(rep.count * sizeof(XEventClass));
+            buf = xallocarray(rep.count, sizeof(XEventClass));
             rep.length = bytes_to_int32(rep.count * sizeof(XEventClass));
 
             tbuf = buf;
@@ -173,7 +173,7 @@ XEventClass
  *
  */
 
-void
+void _X_COLD
 SRepXGetDeviceDontPropagateList(ClientPtr client, int size,
                                 xGetDeviceDontPropagateListReply * rep)
 {

@@ -35,8 +35,6 @@
 #include <dix-config.h>
 #endif
 
-#include <AvailabilityMacros.h>
-
 #include <dlfcn.h>
 
 #include <OpenGL/OpenGL.h>
@@ -52,6 +50,7 @@
 
 #include "visualConfigs.h"
 #include "dri.h"
+#include "extension_string.h"
 
 #include "darwin.h"
 #define GLAQUA_DEBUG_MSG(msg, args ...) ASL_LOG(ASL_LEVEL_DEBUG, "GLXAqua", \
@@ -111,8 +110,6 @@ typedef struct __GLXAquaDrawable __GLXAquaDrawable;
  */
 struct __GLXAquaScreen {
     __GLXscreen base;
-    int index;
-    int num_vis;
 };
 
 struct __GLXAquaContext {
@@ -157,7 +154,7 @@ __glXAquaScreenCreateContext(__GLXscreen *screen,
     memset(context, 0, sizeof *context);
 
     context->base.pGlxScreen = screen;
-
+    context->base.config = conf;
     context->base.destroy = __glXAquaContextDestroy;
     context->base.makeCurrent = __glXAquaContextMakeCurrent;
     context->base.loseCurrent = __glXAquaContextLoseCurrent;
@@ -382,6 +379,9 @@ __glXAquaContextMakeCurrent(__GLXcontext *baseContext)
 
     GLAQUA_DEBUG_MSG("glAquaMakeCurrent (ctx 0x%p)\n", baseContext);
 
+    if (context->base.drawPriv != context->base.readPriv)
+        return 0;
+
     if (attach(context, drawPriv))
         return /*error*/ 0;
 
@@ -537,17 +537,8 @@ __glXAquaScreenProbe(ScreenPtr pScreen)
     screen->base.fbconfigs = __glXAquaCreateVisualConfigs(
         &screen->base.numFBConfigs, pScreen->myNum);
 
+    __glXInitExtensionEnableBits(screen->base.glx_enable_bits);
     __glXScreenInit(&screen->base, pScreen);
-
-    screen->base.GLXmajor = 1;
-    screen->base.GLXminor = 4;
-    screen->base.GLXextensions = strdup("GLX_SGIX_fbconfig "
-                                        "GLX_SGIS_multisample "
-                                        "GLX_ARB_multisample "
-                                        "GLX_EXT_visual_info "
-                                        "GLX_EXT_import_context ");
-
-    /*We may be able to add more GLXextensions at a later time. */
 
     return &screen->base;
 }

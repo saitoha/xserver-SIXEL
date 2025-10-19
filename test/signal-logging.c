@@ -30,6 +30,8 @@
 #include "assert.h"
 #include "misc.h"
 
+#include "tests-common.h"
+
 struct number_format_test {
     uint64_t number;
     char string[21];
@@ -113,12 +115,13 @@ double float_tests[] = { 0, 5, 0.1, 0.01, 5.2342, 10.2301,
                          -1, -2.00, -0.6023, -1203.30
                         };
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Woverflow"
+
 static void
 number_formatting(void)
 {
     int i;
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Woverflow"
     long unsigned int unsigned_tests[] = { 0,/* Zero */
                                            5, /* Single digit number */
                                            12, /* Two digit decimal number */
@@ -141,17 +144,17 @@ number_formatting(void)
                                 -0x15D027BF211B37A, /* Large > 32 bit number */
                                 -0x7FFFFFFFFFFFFFFF, /* Maximum 64-bit signed number */
     } ;
-#pragma GCC diagnostic pop
 
-    for (i = 0; i < sizeof(unsigned_tests) / sizeof(unsigned_tests[0]); i++)
+    for (i = 0; i < ARRAY_SIZE(unsigned_tests); i++)
         assert(check_number_format_test(unsigned_tests[i]));
 
-    for (i = 0; i < sizeof(unsigned_tests) / sizeof(signed_tests[0]); i++)
+    for (i = 0; i < ARRAY_SIZE(signed_tests); i++)
         assert(check_signed_number_format_test(signed_tests[i]));
 
-    for (i = 0; i < sizeof(float_tests) / sizeof(float_tests[0]); i++)
+    for (i = 0; i < ARRAY_SIZE(float_tests); i++)
         assert(check_float_format_test(float_tests[i]));
 }
+#pragma GCC diagnostic pop
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-security"
@@ -176,7 +179,7 @@ static void logging_format(void)
     strcpy(&buf[sizeof(buf) - 4], "end");
 
     LogInit(log_file_path, NULL);
-    assert(f = fopen(log_file_path, "r"));
+    assert((f = fopen(log_file_path, "r")));
 
 #define read_log_msg(msg) do {                                  \
         msg = fgets(read_buf, sizeof(read_buf), f);             \
@@ -363,7 +366,7 @@ static void logging_format(void)
     } while(ptr);
 
 
-    for (i = 0; i < sizeof(float_tests)/sizeof(float_tests[0]); i++) {
+    for (i = 0; i < ARRAY_SIZE(float_tests); i++) {
         double d = float_tests[i];
         char expected[30];
         sprintf(expected, "(EE) %.2f\n", d);
@@ -394,7 +397,7 @@ static void logging_format(void)
 #pragma GCC diagnostic pop /* "-Wformat-security" */
 
 int
-main(int argc, char **argv)
+signal_logging_test(void)
 {
     number_formatting();
     logging_format();

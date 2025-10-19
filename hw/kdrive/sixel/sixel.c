@@ -25,11 +25,23 @@
  *    - jaymz
  *
  */
-#ifdef HAVE_CONFIG_H
-#include "kdrive-config.h"
+#include "xorg-server.h"
+#include "sixel-config.h"
+#ifdef HAVE_CHAFA
+#include <chafa.h>
+/* Ensure we use a non-premultiplied BGRA format; fallback aliases for older API names */
+#ifndef CHAFA_PIXEL_BGRA8_UNASSOCIATED
+#  ifdef CHAFA_PIXEL_BGRA8_UNPREMULTIPLIED
+#    define CHAFA_PIXEL_BGRA8_UNASSOCIATED CHAFA_PIXEL_BGRA8_UNPREMULTIPLIED
+#  else
+#    define CHAFA_PIXEL_BGRA8_UNASSOCIATED CHAFA_PIXEL_BGRA8_PREMULTIPLIED
+#  endif
+#endif
 #endif
 #include "kdrive.h"
+#ifdef HAVE_LIBSIXEL
 #include <sixel.h>
+#endif
 #include <termios.h>
 #include <X11/keysym.h>
 #include <sys/wait.h>
@@ -67,24 +79,22 @@ KdPointerInfo *sixelPointer = NULL;
 pthread_mutex_t sixel_mutex;
 #endif
 
-#if 0
-#define DEBUG 1
-#endif
-
-#if DEBUG
-#define TRACE(s) printf(s)
-#define TRACE1(s, arg1) printf(s, arg1)
-#define TRACE2(s, arg1, arg2) printf(s, arg1, arg2)
-#define TRACE3(s, arg1, arg2, arg3) printf(s, arg1, arg2, arg3)
-#define TRACE4(s, arg1, arg2, arg3, arg4) printf(s, arg1, arg2, arg3, arg4)
-#define TRACE5(s, arg1, arg2, arg3, arg4, arg5) printf(s, arg1, arg2, arg3, arg4, arg5)
+/* Debug tracing (disabled by default). Define XSIXEL_TRACE to enable. */
+#ifdef XSIXEL_TRACE
+#include <stdio.h>
+#define TRACE(s) fprintf(stderr, s)
+#define TRACE1(s, a1) fprintf(stderr, s, a1)
+#define TRACE2(s, a1,a2) fprintf(stderr, s, a1,a2)
+#define TRACE3(s, a1,a2,a3) fprintf(stderr, s, a1,a2,a3)
+#define TRACE4(s, a1,a2,a3,a4) fprintf(stderr, s, a1,a2,a3,a4)
+#define TRACE5(s, a1,a2,a3,a4,a5) fprintf(stderr, s, a1,a2,a3,a4,a5)
 #else
-#define TRACE(s)
-#define TRACE1(s, arg1)
-#define TRACE2(s, arg1, arg2)
-#define TRACE3(s, arg1, arg2, arg3)
-#define TRACE4(s, arg1, arg2, arg3, arg4)
-#define TRACE5(s, arg1, arg2, arg3, arg4, arg5)
+#define TRACE(s) do{}while(0)
+#define TRACE1(s,a1) do{}while(0)
+#define TRACE2(s,a1,a2) do{}while(0)
+#define TRACE3(s,a1,a2,a3) do{}while(0)
+#define TRACE4(s,a1,a2,a3,a4) do{}while(0)
+#define TRACE5(s,a1,a2,a3,a4,a5) do{}while(0)
 #endif
 
 KdKeyboardDriver sixelKeyboardDriver = {
@@ -127,11 +137,28 @@ typedef struct
     Bool shadow;
     unsigned char *buffer;
     unsigned char *bitmap;
+    /* libsixel backend */
+#ifdef HAVE_LIBSIXEL
     sixel_dither_t *dither;
     sixel_output_t *output;
+#endif
+    /* chafa backend */
+#ifdef HAVE_CHAFA
+    ChafaCanvasConfig *chafa_cfg;
+    ChafaCanvas *chafa_canvas;
+    ChafaTermInfo *chafa_tinfo;
+#endif
 } SIXEL_Driver;
 
 static SIXEL_Driver *g_driver = NULL;
+
+typedef enum {
+    RENDERER_DEFAULT = 0,
+    RENDERER_CHAFA,
+    RENDERER_LIBSIXEL
+} sixel_renderer_t;
+
+static sixel_renderer_t g_renderer = RENDERER_DEFAULT;
 
 #define SIXEL_UP                (1 << 12 | ('A' - '@'))
 #define SIXEL_DOWN              (1 << 12 | ('B' - '@'))
@@ -395,9 +422,66 @@ static int SIXEL_Flip(SIXEL_Driver *driver)
 #if USE_MUTEX
     pthread_mutex_lock(&sixel_mutex);
 #endif
-    memcpy(driver->bitmap, driver->buffer, driver->h * driver->w * 3);
+#ifdef HAVE_LIBSIXEL
+    if (g_renderer == RENDERER_LIBSIXEL) {
+        int x, y;
+        unsigned char *dst3 = driver->bitmap;
+        for (y = 0; y < driver->h; ++y) {
+            unsigned char *src32 = driver->buffer + y * driver->pitch;
+            for (x = 0; x < driver->w; ++x) {
+                unsigned char b = src32[0];
+                unsigned char g = src32[1];
+                unsigned char r = src32[2];
+                dst3[0] = r; dst3[1] = g; dst3[2] = b;
+                src32 += 4;
+                dst3  += 3;
+            }
+        }
     printf("\033[%d;%dH", start_row, start_col);
-    sixel_encode(driver->bitmap, driver->w, driver->h, 3, driver->dither, driver->output);
+printf("\033]2;Filp;start_row: %d, start_col: %d, driver->w: %d, driver->h: %d, driver->pitch: %d\007", start_row, start_col, driver->w, driver->h, driver->pitch);
+        sixel_encode(driver->bitmap, driver->w, driver->h, 3, driver->dither, driver->output);
+    }
+#endif
+#ifdef HAVE_CHAFA
+    if (g_renderer == RENDERER_CHAFA) {
+        /* Convert 32bpp XRGB to packed RGB8 to avoid alpha issues */
+        int x, y;
+        unsigned char *dst3 = driver->bitmap;
+        for (y = 0; y < driver->h; ++y) {
+            unsigned char *src32 = driver->buffer + y * driver->pitch;
+            for (x = 0; x < driver->w; ++x) {
+                unsigned char b = src32[0];
+                unsigned char g = src32[1];
+                unsigned char r = src32[2];
+                dst3[0] = r; dst3[1] = g; dst3[2] = b;
+                src32 += 4;
+                dst3  += 3;
+            }
+        }
+        chafa_canvas_config_set_cell_geometry(driver->chafa_cfg,
+                                              driver->pixel_w / driver->cell_w,
+                                              driver->pixel_h / driver->cell_h);
+        chafa_canvas_config_set_geometry(driver->chafa_cfg,
+                                         driver->cell_w,
+                                         driver->cell_h);
+        driver->chafa_canvas = chafa_canvas_new(g_driver->chafa_cfg);
+
+        chafa_canvas_draw_all_pixels(driver->chafa_canvas,
+                                     CHAFA_PIXEL_RGB8,
+                                     driver->bitmap,
+                                     driver->w,
+                                     driver->h,
+                                     driver->w * 3);
+        GString *s = chafa_canvas_print(driver->chafa_canvas, driver->chafa_tinfo);
+        if (s) {
+            printf("\033[H");
+            fwrite(s->str, 1, s->len, stdout);
+            g_string_free(s, TRUE);
+        }
+        chafa_canvas_unref(driver->chafa_canvas);
+        driver->chafa_canvas = NULL;
+    }
+#endif
 #if USE_MUTEX
     pthread_mutex_unlock(&sixel_mutex);
 #endif
@@ -411,7 +495,7 @@ static void SIXEL_UpdateRects(SIXEL_Driver *driver, int numrects, pixman_box16_t
     int start_row = 1, start_col = 1;
     int cell_height = 0, cell_width = 0;
     int i, y;
-    unsigned char *src, *dst;
+    unsigned char *dst;
 #if SIXEL_VIDEO_DEBUG
     static int frames = 0;
     char *format;
@@ -427,48 +511,94 @@ static void SIXEL_UpdateRects(SIXEL_Driver *driver, int numrects, pixman_box16_t
 #if USE_MUTEX
         pthread_mutex_lock(&sixel_mutex);
 #endif
-        for (i = 0; i < numrects; ++i, ++rects) {
-            if (rects->x1 < box.x1) {
-                box.x1 = rects->x1;
+#ifdef HAVE_CHAFA
+        if (g_renderer == RENDERER_CHAFA) {
+            /* Convert 32bpp XRGB to packed RGB8 to avoid alpha issues */
+            int x, y;
+            unsigned char *dst3 = driver->bitmap;
+            for (y = 0; y < driver->h; ++y) {
+                unsigned char *src32 = driver->buffer + y * driver->pitch;
+                for (x = 0; x < driver->w; ++x) {
+                    unsigned char b = src32[0];
+                    unsigned char g = src32[1];
+                    unsigned char r = src32[2];
+                    dst3[0] = r; dst3[1] = g; dst3[2] = b;
+                    src32 += 4;
+                    dst3  += 3;
+                }
             }
-            if (rects->y1 < box.y1) {
-                box.y1 = rects->y1;
+            cell_height = driver->pixel_h / driver->cell_h;
+            cell_width = driver->pixel_w / driver->cell_w;
+            chafa_canvas_config_set_cell_geometry(driver->chafa_cfg,
+                                                  driver->pixel_w / driver->cell_w,
+                                                  driver->pixel_h / driver->cell_h);
+            chafa_canvas_config_set_geometry(driver->chafa_cfg,
+                                             driver->cell_w,
+                                             driver->cell_h);
+            driver->chafa_canvas = chafa_canvas_new(g_driver->chafa_cfg);
+            chafa_canvas_draw_all_pixels(driver->chafa_canvas,
+                                         CHAFA_PIXEL_RGB8,
+                                         driver->bitmap,
+                                         driver->w,
+                                         driver->h,
+                                         driver->w * 3);
+            GString *s = chafa_canvas_print(driver->chafa_canvas, driver->chafa_tinfo);
+            if (s) {
+                printf("\033[H");
+                fwrite(s->str, 1, s->len, stdout);
+                g_string_free(s, TRUE);
             }
-            if (rects->x2 > box.x2) {
-                box.x2 = rects->x2;
-            }
-            if (rects->y2 > box.y2) {
-                box.y2 = rects->y2;
-            }
+            chafa_canvas_unref(driver->chafa_canvas);
+            driver->chafa_canvas = NULL;
         }
-        start_row = 1;
-        start_col = 1;
-        cell_height = driver->pixel_h / driver->cell_h;
-        cell_width = driver->pixel_w / driver->cell_w;
-        start_row += box.y1 / cell_height;
-        start_col += box.x1 / cell_width;
-        box.y1 = (start_row - 1) * cell_height;
-        box.x1 = (start_col - 1) * cell_width;
-        box.y2 = min((box.y2 / cell_height + 1) * cell_height, driver->h);
-        box.x2 = min((box.x2 / cell_width + 1) * cell_width, driver->w);
-        if (box.x1 == 0 && box.x2 == driver->w) {
-            dst = driver->bitmap;
-            src = driver->buffer + box.y1 * driver->w * 3;
-            memcpy(dst, src, (box.y2 - box.y1) * driver->w * 3);
-        } else {
+#endif
+#ifdef HAVE_LIBSIXEL
+        if (g_renderer == RENDERER_LIBSIXEL) {
+            for (i = 0; i < numrects; ++i, ++rects) {
+                if (rects->x1 < box.x1) {
+                    box.x1 = rects->x1;
+                }
+                if (rects->y1 < box.y1) {
+                    box.y1 = rects->y1;
+                }
+                if (rects->x2 > box.x2) {
+                    box.x2 = rects->x2;
+                }
+                if (rects->y2 > box.y2) {
+                    box.y2 = rects->y2;
+                }
+            }
+            start_row = 1;
+            start_col = 1;
+            cell_height = driver->pixel_h / driver->cell_h;
+            cell_width = driver->pixel_w / driver->cell_w;
+            start_row += box.y1 / cell_height;
+            start_col += box.x1 / cell_width;
+            box.y1 = (start_row - 1) * cell_height;
+            box.x1 = (start_col - 1) * cell_width;
+            box.y2 = min((box.y2 / cell_height + 1) * cell_height, driver->h);
+            box.x2 = min((box.x2 / cell_width + 1) * cell_width, driver->w);
             for (y = box.y1; y < box.y2; ++y) {
+                unsigned char *src32 = driver->buffer + y * driver->pitch + box.x1 * 4;
                 dst = driver->bitmap + (y - box.y1) * (box.x2 - box.x1) * 3;
-                src = driver->buffer + y * driver->w * 3 + box.x1 * 3;
-                memcpy(dst, src, (box.x2 - box.x1) * 3);
+                int x;
+                for (x = box.x1; x < box.x2; ++x) {
+                    unsigned char b = src32[0];
+                    unsigned char g = src32[1];
+                    unsigned char r = src32[2];
+                    *dst++ = r; *dst++ = g; *dst++ = b;
+                    src32 += 4;
+                }
             }
+            printf("\033[%d;%dH", start_row, start_col);
+            sixel_encode(driver->bitmap,
+                         (box.x2 - box.x1),
+                         (box.y2 - box.y1),
+                         3,
+                         driver->dither,
+                         driver->output);
         }
-        printf("\033[%d;%dH", start_row, start_col);
-        sixel_encode(driver->bitmap,
-                     (box.x2 - box.x1),
-                     (box.y2 - box.y1),
-                     3,
-                     driver->dither,
-                     driver->output);
+#endif
 #if SIXEL_VIDEO_DEBUG
         format = "\033[100;1Hframes: %05d, x: %04d, y: %04d, w: %04d, h: %04d";
         printf(format, ++frames,
@@ -491,10 +621,9 @@ static Bool sixelMapFramebuffer(KdScreenInfo *screen)
     SIXEL_Driver *driver = screen->driver;
     KdPointerMatrix m;
 
-    if (driver->randr != RR_Rotate_0)
-        driver->shadow = TRUE;
-    else
-        driver->shadow = FALSE;
+    /* Always use a shadow framebuffer managed by KDrive/fb (32bpp).
+     * We convert to RGB for SIXEL in the update path. */
+    driver->shadow = TRUE;
 
     KdComputePointerMatrix (&m, driver->randr, screen->width, screen->height);
 
@@ -505,18 +634,9 @@ static Bool sixelMapFramebuffer(KdScreenInfo *screen)
 
     TRACE2("%s: shadow %d\n", __func__, driver->shadow);
 
-    if (driver->shadow)
-    {
-        if (!KdShadowFbAlloc (screen,
-                              driver->randr & (RR_Rotate_90|RR_Rotate_270)))
-            return FALSE;
-    }
-    else
-    {
-        screen->fb.byteStride = driver->pitch;
-        screen->fb.pixelStride = driver->w;
-        screen->fb.frameBuffer = (CARD8 *) (driver->buffer);
-    }
+    if (!KdShadowFbAlloc(screen,
+                         driver->randr & (RR_Rotate_90|RR_Rotate_270)))
+        return FALSE;
 
     return TRUE;
 }
@@ -568,27 +688,18 @@ static Bool sixelScreenInit(KdScreenInfo *screen)
         screen->width = 640;
         screen->height = 480;
     }
-//    if (!screen->fb.depth) {
-        screen->fb.depth = 24;
-//    }
+    /* Force a sane default pixel format (depth 24, bpp 32, XRGB8888). */
+    screen->fb.depth = 24;
+    screen->fb.bitsPerPixel = 32;
+    screen->fb.visuals = (1 << TrueColor);
+    screen->fb.redMask   = 0x00ff0000;
+    screen->fb.greenMask = 0x0000ff00;
+    screen->fb.blueMask  = 0x000000ff;
 
     driver = g_driver = calloc(1, sizeof(SIXEL_Driver));
 
-    TRACE3("Attempting for %dx%d/%dbpp mode\n", screen->width, screen->height, screen->fb.depth);
-
-    driver->output = sixel_output_create(sixel_write, stdout);
-    driver->dither = sixel_dither_get(BUILTIN_XTERM256);
-
-    driver->buffer = calloc(1, 3 * screen->width * screen->height);
-    if (!driver->buffer) {
-        printf("Couldn't allocate buffer for requested mode\n");
-        return FALSE;
-    }
-    driver->bitmap = calloc(1, 3 * screen->width * screen->height);
-    if (!driver->bitmap) {
-        printf("Couldn't allocate buffer for requested mode\n");
-        return FALSE;
-    }
+    TRACE3("Attempting for %dx%d/%dbpp mode\n",
+           screen->width, screen->height, screen->fb.depth);
 
     /* Set up the new mode framebuffer */
     driver->w = screen->width;
@@ -597,7 +708,7 @@ static Bool sixelScreenInit(KdScreenInfo *screen)
     driver->pixel_h = 0;
     driver->cell_w = 0;
     driver->cell_h = 0;
-    driver->pitch = screen->width * 3;
+    /* driver->pitch used by shadow window refers to 32bpp buffer stride */
 
     ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws);
     driver->pixel_w = ws.ws_xpixel;
@@ -605,6 +716,7 @@ static Bool sixelScreenInit(KdScreenInfo *screen)
     driver->cell_w = ws.ws_col;
     driver->cell_h = ws.ws_row;
 
+    /* require dtterm response (SIXEL_DTTERM_SEQS) */
     if (driver->cell_w <= 0 || driver->cell_h <= 0) {
         printf("\033[18t");
     }
@@ -612,19 +724,58 @@ static Bool sixelScreenInit(KdScreenInfo *screen)
         printf("\033[14t");
     }
 
+    /* Select default renderer if not set explicitly */
+#if defined(HAVE_LIBSIXEL)
+    if (g_renderer == RENDERER_DEFAULT)
+        g_renderer = RENDERER_LIBSIXEL;
+#elif defined(HAVE_CHAFA)
+    if (g_renderer == RENDERER_DEFAULT)
+        g_renderer = RENDERER_CHAFA;
+#endif
+
+#ifdef HAVE_CHAFA
+    if (g_renderer == RENDERER_CHAFA) {
+        driver->chafa_cfg = chafa_canvas_config_new();
+        chafa_canvas_config_set_pixel_mode(driver->chafa_cfg, CHAFA_PIXEL_MODE_SIXELS);
+        chafa_canvas_config_set_canvas_mode(driver->chafa_cfg, CHAFA_CANVAS_MODE_TRUECOLOR);
+        driver->chafa_tinfo = NULL;
+    }
+#endif
+
+#ifdef HAVE_LIBSIXEL
+    if (g_renderer == RENDERER_LIBSIXEL) {
+        driver->output = sixel_output_create(sixel_write, stdout);
+        driver->dither = sixel_dither_get(BUILTIN_XTERM256);
+    }
+#endif
+
+    /* 32bpp shadow destination buffer for shadowUpdatePacked */
+    driver->pitch = screen->width * 4;
+    driver->buffer = calloc(1, driver->pitch * screen->height);
+    if (!driver->buffer) {
+        printf("Couldn't allocate buffer for requested mode\n");
+        return FALSE;
+    }
+    /* 3-bytes-per-pixel RGB staging buffer for SIXEL encoder */
+    driver->bitmap = calloc(1, 3 * screen->width * screen->height);
+    if (!driver->bitmap) {
+        printf("Couldn't allocate buffer for requested mode\n");
+        return FALSE;
+    }
+
     driver->randr = screen->randr;
     screen->driver = driver;
 
     TRACE3("Set %dx%d/%dbpp mode\n", driver->w, driver->h, screen->fb.depth);
 
-    screen->fb.visuals = (1 << 4);
-    screen->fb.redMask = 0x0000ff;
-    screen->fb.greenMask = 0x00ff00;
-    screen->fb.blueMask = 0xff0000;
-    screen->fb.bitsPerPixel = screen->fb.depth;
-#if 0
-    screen->fb.shadow = FALSE;
-#endif
+    /* Keep visuals/masks/bpp consistent with XRGB8888 */
+    screen->fb.visuals = (1 << TrueColor);
+    screen->fb.redMask = 0x00ff0000;
+    screen->fb.greenMask = 0x0000ff00;
+    screen->fb.blueMask = 0x000000ff;
+    screen->fb.bitsPerPixel = 32;
+    /* Keep shadow enabled so KDrive issues shadow updates */
+    screen->fb.shadow = TRUE;
     screen->rate = 8;  /* 60 is too intense for CPU */
 
     printf("\033]1;Freedesktop.org X server on SIXEL\007");
@@ -690,7 +841,6 @@ static Bool sixelCreateRes(ScreenPtr pScreen)
     KdScreenPriv(pScreen);
     KdScreenInfo *screen = pScreenPriv->screen;
     SIXEL_Driver *driver = screen->driver;
-    Bool oldShadow = screen->fb.shadow;
 
     TRACE1("%s\n", __func__);
 
@@ -700,7 +850,6 @@ static Bool sixelCreateRes(ScreenPtr pScreen)
      */
     screen->fb.shadow = TRUE;
     KdShadowSet(pScreen, driver->randr, sixelShadowUpdate, sixelShadowWindow);
-    screen->fb.shadow = oldShadow;
 
     return TRUE;
 }
@@ -943,10 +1092,22 @@ void InitInput(int argc, char **argv)
     KdAddKeyboardDriver(&sixelKeyboardDriver);
     KdAddPointerDriver(&sixelMouseDriver);
 
-    ki = KdParseKeyboard("keyboard");
-    KdAddKeyboard(ki);
-    pi = KdParsePointer("mouse");
-    KdAddPointer(pi);
+    ki = KdNewKeyboard();
+    if (ki) {
+        ki->name = strdup("KDrive Keyboard");
+        ki->driverPrivate = strdup("keyboard");
+        KdAddKeyboard(ki);
+    }
+    pi = KdNewPointer();
+    if (pi) {
+        pi->name = strdup("KDrive Pointer");
+        pi->driverPrivate = strdup("mouse");
+        pi->nButtons = 5;
+        pi->inputClass = KD_MOUSE;
+        pi->emulateMiddleButton = kdEmulateMiddleButton;
+        pi->transformCoordinates = !kdRawPointerCoordinates;
+        KdAddPointer(pi);
+    }
 
     KdInitInput();
 }
@@ -960,10 +1121,32 @@ void ddxBeforeReset(void)
 void ddxUseMsg(void)
 {
     KdUseMsg();
+    ErrorF("-backend {chafa|libsixel}  Choose renderer backend (default: libsixel if built)\n");
 }
 
 int ddxProcessArgument(int argc, char **argv, int i)
 {
+    if (!strcmp(argv[i], "-backend")) {
+        if (i + 1 >= argc) {
+            UseMsg();
+            return 0;
+        }
+#ifdef HAVE_CHAFA
+        else if (!strcmp(argv[i + 1], "chafa")) {
+            g_renderer = RENDERER_CHAFA;
+        }
+#endif
+#ifdef HAVE_LIBSIXEL
+        else if (!strcmp(argv[i + 1], "libsixel")) {
+            g_renderer = RENDERER_LIBSIXEL;
+        }
+#endif
+        else {
+            UseMsg();
+            return 0;
+        }
+        return 2;
+    }
     return KdProcessArgument(argc, argv, i);
 }
 
@@ -1232,8 +1415,22 @@ static void sixelFini(void)
     tty_restore();
 
     if (g_driver) {
-        sixel_dither_unref(g_driver->dither);
-        sixel_output_unref(g_driver->output);
+#ifdef HAVE_CHAFA
+        if (g_driver->chafa_canvas)
+            chafa_canvas_unref(g_driver->chafa_canvas);
+        if (g_driver->chafa_cfg)
+            chafa_canvas_config_unref(g_driver->chafa_cfg);
+        if (g_driver->chafa_tinfo)
+            chafa_term_info_unref(g_driver->chafa_tinfo);
+#endif
+#ifdef HAVE_LIBSIXEL
+        if (g_driver->dither)
+            sixel_dither_unref(g_driver->dither);
+        if (g_driver->output)
+            sixel_output_unref(g_driver->output);
+#endif
+        /* We intentionally skip unref for chafa objects to avoid
+           requiring newer API; process exit will reclaim memory. */
         free(g_driver);
     }
 }
@@ -1248,17 +1445,24 @@ sixelBell(int volume, int pitch, int duration)
 void CloseInput(void)
 {
     KdCloseInput();
+    sixelFini();
 }
 
-KdOsFuncs sixelOsFuncs = {
-    .Init = sixelInit,
-    .Fini = sixelFini,
-    .pollEvents = sixelPollInput,
-    .Bell = sixelBell,
-};
-
-void OsVendorInit (void)
+static void sixelNotifyFd(int fd, int ready, void *data)
 {
-    KdOsInit (&sixelOsFuncs);
+    (void)fd; (void)ready; (void)data;
+    sixelPollInput();
 }
 
+void OsVendorInit(void)
+{
+    /* Initialize terminal + sixel, then hook stdin for input */
+    sixelInit();
+    SetNotifyFd(STDIN_FILENO, sixelNotifyFd, X_NOTIFY_READ, NULL);
+}
+
+/* Input thread hook (may be called by os/inputthread.c) */
+void ddxInputThreadInit(void)
+{
+    /* Nothing special needed for sixel */
+}

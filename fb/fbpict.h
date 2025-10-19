@@ -30,7 +30,6 @@
 
 /* fbpict.c */
 extern _X_EXPORT void
-
 fbComposite(CARD8 op,
             PicturePtr pSrc,
             PicturePtr pMask,
@@ -43,21 +42,17 @@ fbComposite(CARD8 op,
 /* fbtrap.c */
 
 extern _X_EXPORT void
-
 fbAddTraps(PicturePtr pPicture,
            INT16 xOff, INT16 yOff, int ntrap, xTrap * traps);
 
 extern _X_EXPORT void
-
 fbRasterizeTrapezoid(PicturePtr alpha, xTrapezoid * trap, int x_off, int y_off);
 
 extern _X_EXPORT void
-
 fbAddTriangles(PicturePtr pPicture,
                INT16 xOff, INT16 yOff, int ntri, xTriangle * tris);
 
 extern _X_EXPORT void
-
 fbTrapezoids(CARD8 op,
              PicturePtr pSrc,
              PicturePtr pDst,
@@ -70,10 +65,6 @@ fbTriangles(CARD8 op,
             PicturePtr pDst,
             PictFormatPtr maskFormat,
             INT16 xSrc, INT16 ySrc, int ntris, xTriangle * tris);
-
-extern _X_EXPORT void
-fbUnrealizeGlyph(ScreenPtr pScreen,
-		 GlyphPtr pGlyph);
 
 extern _X_EXPORT void
 fbGlyphs(CARD8 op,

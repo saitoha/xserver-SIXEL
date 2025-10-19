@@ -26,13 +26,13 @@ Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
 
                         All Rights Reserved
 
-Permission to use, copy, modify, and distribute this software and its 
-documentation for any purpose and without fee is hereby granted, 
+Permission to use, copy, modify, and distribute this software and its
+documentation for any purpose and without fee is hereby granted,
 provided that the above copyright notice appear in all copies and that
-both that copyright notice and this permission notice appear in 
+both that copyright notice and this permission notice appear in
 supporting documentation, and that the name of Digital not be
 used in advertising or publicity pertaining to distribution of the
-software without specific, written prior permission.  
+software without specific, written prior permission.
 
 DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
 ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
@@ -74,9 +74,14 @@ SOFTWARE.
     if ((sizeof(req) >> 2) > client->req_len )\
          return(BadLength)
 
+#define REQUEST_AT_LEAST_EXTRA_SIZE(req, extra)  \
+    if (((sizeof(req) + ((uint64_t) extra)) >> 2) > client->req_len ) \
+         return(BadLength)
+
 #define REQUEST_FIXED_SIZE(req, n)\
     if (((sizeof(req) >> 2) > client->req_len) || \
-        (((sizeof(req) + (n) + 3) >> 2) != client->req_len)) \
+        (((n) >> 2) >= client->req_len) ||                              \
+        ((((uint64_t) sizeof(req) + (n) + 3) >> 2) != (uint64_t) client->req_len))  \
          return(BadLength)
 
 #define LEGAL_NEW_RESOURCE(id,client)\
@@ -130,6 +135,12 @@ typedef int HWEventQueueType;
 typedef HWEventQueueType *HWEventQueuePtr;
 
 extern _X_EXPORT HWEventQueuePtr checkForInput[2];
+
+static inline _X_NOTSAN Bool
+InputCheckPending(void)
+{
+    return (*checkForInput[0] != *checkForInput[1]);
+}
 
 typedef struct _TimeStamp {
     CARD32 months;              /* really ~49.7 days */
@@ -203,31 +214,33 @@ extern _X_EXPORT int AlterSaveSetForClient(ClientPtr /*client */ ,
 
 extern _X_EXPORT void DeleteWindowFromAnySaveSet(WindowPtr /*pWin */ );
 
-extern _X_EXPORT void BlockHandler(void *pTimeout,
-                                   void *pReadmask);
+extern _X_EXPORT void BlockHandler(void *timeout);
 
-extern _X_EXPORT void WakeupHandler(int result,
-                                    void *pReadmask);
+extern _X_EXPORT void WakeupHandler(int result);
 
 void
- EnableLimitedSchedulingLatency(void);
+EnableLimitedSchedulingLatency(void);
 
 void
- DisableLimitedSchedulingLatency(void);
+DisableLimitedSchedulingLatency(void);
 
-typedef void (*WakeupHandlerProcPtr) (void *blockData,
-                                      int result,
-                                      void *pReadmask);
+typedef void (*ServerBlockHandlerProcPtr) (void *blockData,
+                                           void *timeout);
 
-extern _X_EXPORT Bool RegisterBlockAndWakeupHandlers(BlockHandlerProcPtr blockHandler,
-                                                     WakeupHandlerProcPtr wakeupHandler,
+typedef void (*ServerWakeupHandlerProcPtr) (void *blockData,
+                                            int result);
+
+extern _X_EXPORT Bool RegisterBlockAndWakeupHandlers(ServerBlockHandlerProcPtr blockHandler,
+                                                     ServerWakeupHandlerProcPtr wakeupHandler,
                                                      void *blockData);
 
-extern _X_EXPORT void RemoveBlockAndWakeupHandlers(BlockHandlerProcPtr blockHandler,
-                                                   WakeupHandlerProcPtr wakeupHandler,
+extern _X_EXPORT void RemoveBlockAndWakeupHandlers(ServerBlockHandlerProcPtr blockHandler,
+                                                   ServerWakeupHandlerProcPtr wakeupHandler,
                                                    void *blockData);
 
 extern _X_EXPORT void InitBlockAndWakeupHandlers(void);
+
+extern _X_EXPORT void ClearWorkQueue(void);
 
 extern _X_EXPORT void ProcessWorkQueue(void);
 
@@ -250,9 +263,23 @@ extern _X_EXPORT Bool ClientSleep(ClientPtr client,
 extern _X_EXPORT Bool ClientSignal(ClientPtr /*client */ );
 #endif                          /* ___CLIENTSIGNAL_DEFINED___ */
 
+#ifndef ___CLIENTSIGNALALL_DEFINED___
+#define ___CLIENTSIGNALALL_DEFINED___
+#define CLIENT_SIGNAL_ANY ((void *)-1)
+extern _X_EXPORT int ClientSignalAll(ClientPtr /*client*/,
+                                     ClientSleepProcPtr /*function*/,
+                                     void * /*closure*/);
+#endif                          /* ___CLIENTSIGNALALL_DEFINED___ */
+
 extern _X_EXPORT void ClientWakeup(ClientPtr /*client */ );
 
 extern _X_EXPORT Bool ClientIsAsleep(ClientPtr /*client */ );
+
+extern _X_EXPORT void SendGraphicsExpose(ClientPtr /*client */ ,
+                                         RegionPtr /*pRgn */ ,
+                                         XID /*drawable */ ,
+                                         int /*major */ ,
+                                         int  /*minor */);
 
 /* atom.c */
 
@@ -532,11 +559,6 @@ extern _X_EXPORT void
 ScreenRestructured(ScreenPtr pScreen);
 #endif
 
-#ifndef HAVE_FFS
-extern _X_EXPORT int
-ffs(int i);
-#endif
-
 /*
  *  ServerGrabCallback stuff
  */
@@ -574,6 +596,8 @@ typedef struct {
     InternalEvent *event;
     DeviceIntPtr device;
 } DeviceEventInfoRec;
+
+extern _X_EXPORT CallbackListPtr RootWindowFinalizeCallback;
 
 extern int
 XItoCoreType(int xi_type);

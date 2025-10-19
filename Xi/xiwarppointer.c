@@ -52,10 +52,12 @@
  *
  */
 
-int
+int _X_COLD
 SProcXIWarpPointer(ClientPtr client)
 {
     REQUEST(xXIWarpPointerReq);
+    REQUEST_SIZE_MATCH(xXIWarpPointerReq);
+
     swaps(&stuff->length);
     swapl(&stuff->src_win);
     swapl(&stuff->dst_win);
@@ -183,6 +185,10 @@ ProcXIWarpPointer(ClientPtr client)
     pDev->last.valuators[0] = x;
     pDev->last.valuators[1] = y;
     miPointerUpdateSprite(pDev);
+
+    if (*newScreen->CursorWarpedTo)
+        (*newScreen->CursorWarpedTo) (pDev, newScreen, client,
+                                      dest, pSprite, x, y);
 
     /* FIXME: XWarpPointer is supposed to generate an event. It doesn't do it
        here though. */

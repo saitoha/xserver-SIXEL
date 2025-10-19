@@ -32,6 +32,7 @@ static const char dash_vs_vars[] =
 
 static const char dash_vs_exec[] =
     "       dash_offset = primitive.z / dash_length;\n"
+    "       vec2 pos = vec2(0,0);\n"
     GLAMOR_POS(gl_Position, primitive.xy);
 
 static const char dash_fs_vars[] =
@@ -146,7 +147,7 @@ glamor_dash_setup(DrawablePtr drawable, GCPtr gc)
         goto bail;
 
     dash_pixmap = glamor_get_dash_pixmap(gc);
-    dash_priv = glamor_get_pixmap_private(pixmap);
+    dash_priv = glamor_get_pixmap_private(dash_pixmap);
 
     if (!GLAMOR_PIXMAP_PRIV_HAS_FBO(dash_priv))
         goto bail;
@@ -159,44 +160,41 @@ glamor_dash_setup(DrawablePtr drawable, GCPtr gc)
                                        &glamor_priv->on_off_dash_line_progs,
                                        &glamor_facet_on_off_dash_lines);
         if (!prog)
-            goto bail_ctx;
+            goto bail;
         break;
     case LineDoubleDash:
         if (gc->fillStyle != FillSolid)
-            goto bail_ctx;
+            goto bail;
 
         prog = &glamor_priv->double_dash_line_prog;
 
         if (!prog->prog) {
             if (!glamor_build_program(screen, prog,
                                       &glamor_facet_double_dash_lines,
-                                      NULL))
-                goto bail_ctx;
+                                      NULL, NULL, NULL))
+                goto bail;
         }
 
         if (!glamor_use_program(pixmap, gc, prog, NULL))
-            goto bail_ctx;
+            goto bail;
 
         glamor_set_color(pixmap, gc->fgPixel, prog->fg_uniform);
         glamor_set_color(pixmap, gc->bgPixel, prog->bg_uniform);
         break;
 
     default:
-        goto bail_ctx;
+        goto bail;
     }
 
 
     /* Set the dash pattern as texture 1 */
 
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, dash_priv->base.fbo->tex);
+    glamor_bind_texture(glamor_priv, GL_TEXTURE1, dash_priv->fbo, FALSE);
     glUniform1i(prog->dash_uniform, 1);
     glUniform1f(prog->dash_length_uniform, dash_pixmap->drawable.width);
 
     return prog;
 
-bail_ctx:
-    glDisable(GL_COLOR_LOGIC_OP);
 bail:
     return NULL;
 }
@@ -207,16 +205,16 @@ glamor_dash_loop(DrawablePtr drawable, GCPtr gc, glamor_program *prog,
 {
     PixmapPtr pixmap = glamor_get_drawable_pixmap(drawable);
     glamor_pixmap_private *pixmap_priv = glamor_get_pixmap_private(pixmap);
-    int box_x, box_y;
+    int box_index;
     int off_x, off_y;
 
     glEnable(GL_SCISSOR_TEST);
 
-    glamor_pixmap_loop(pixmap_priv, box_x, box_y) {
+    glamor_pixmap_loop(pixmap_priv, box_index) {
         int nbox = RegionNumRects(gc->pCompositeClip);
         BoxPtr box = RegionRects(gc->pCompositeClip);
 
-        glamor_set_destination_drawable(drawable, box_x, box_y, TRUE, TRUE,
+        glamor_set_destination_drawable(drawable, box_index, TRUE, TRUE,
                                         prog->matrix_uniform, &off_x, &off_y);
 
         while (nbox--) {
@@ -230,7 +228,6 @@ glamor_dash_loop(DrawablePtr drawable, GCPtr gc, glamor_program *prog,
     }
 
     glDisable(GL_SCISSOR_TEST);
-    glDisable(GL_COLOR_LOGIC_OP);
     glDisableVertexAttribArray(GLAMOR_VERTEX_POS);
 }
 

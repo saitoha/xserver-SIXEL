@@ -66,10 +66,11 @@ from The Open Group.
 #include "dix.h"
 #include "miline.h"
 #include "glx_extinit.h"
+#include "randrstr.h"
 
 #define VFB_DEFAULT_WIDTH      1280
 #define VFB_DEFAULT_HEIGHT     1024
-#define VFB_DEFAULT_DEPTH         8
+#define VFB_DEFAULT_DEPTH        24
 #define VFB_DEFAULT_WHITEPIXEL    1
 #define VFB_DEFAULT_BLACKPIXEL    0
 #define VFB_DEFAULT_LINEBIAS      0
@@ -231,6 +232,15 @@ ddxBeforeReset(void)
 }
 #endif
 
+#if INPUTTHREAD
+/** This function is called in Xserver/os/inputthread.c when starting
+    the input thread. */
+void
+ddxInputThreadInit(void)
+{
+}
+#endif
+
 void
 ddxUseMsg(void)
 {
@@ -292,7 +302,7 @@ ddxProcessArgument(int argc, char *argv[], int i)
 
         if (vfbNumScreens <= screenNum) {
             vfbScreens =
-                realloc(vfbScreens, sizeof(*vfbScreens) * (screenNum + 1));
+                reallocarray(vfbScreens, screenNum + 1, sizeof(*vfbScreens));
             if (!vfbScreens)
                 FatalError("Not enough memory for screen %d\n", screenNum);
             for (; vfbNumScreens <= screenNum; ++vfbNumScreens)
@@ -380,26 +390,10 @@ ddxProcessArgument(int argc, char *argv[], int i)
     return 0;
 }
 
-static DevPrivateKeyRec cmapScrPrivateKeyRec;
-
-#define cmapScrPrivateKey (&cmapScrPrivateKeyRec)
-
-#define GetInstalledColormap(s) ((ColormapPtr) dixLookupPrivate(&(s)->devPrivates, cmapScrPrivateKey))
-#define SetInstalledColormap(s,c) (dixSetPrivate(&(s)->devPrivates, cmapScrPrivateKey, c))
-
-static int
-vfbListInstalledColormaps(ScreenPtr pScreen, Colormap * pmaps)
-{
-    /* By the time we are processing requests, we can guarantee that there
-     * is always a colormap installed */
-    *pmaps = GetInstalledColormap(pScreen)->mid;
-    return 1;
-}
-
 static void
 vfbInstallColormap(ColormapPtr pmap)
 {
-    ColormapPtr oldpmap = GetInstalledColormap(pmap->pScreen);
+    ColormapPtr oldpmap = GetInstalledmiColormap(pmap->pScreen);
 
     if (pmap != oldpmap) {
         int entries;
@@ -410,11 +404,7 @@ vfbInstallColormap(ColormapPtr pmap)
         xColorItem *defs;
         int i;
 
-        if (oldpmap != (ColormapPtr) None)
-            WalkTree(pmap->pScreen, TellLostMap, (char *) &oldpmap->mid);
-        /* Install pmap */
-        SetInstalledColormap(pmap->pScreen, pmap);
-        WalkTree(pmap->pScreen, TellGainedMap, (char *) &pmap->mid);
+        miInstallColormap(pmap);
 
         entries = pmap->pVisual->ColormapEntries;
         pXWDHeader = vfbScreens[pmap->pScreen->myNum].pXWDHeader;
@@ -427,9 +417,9 @@ vfbInstallColormap(ColormapPtr pmap)
         swapcopy32(pXWDHeader->bits_per_rgb, pVisual->bitsPerRGBValue);
         swapcopy32(pXWDHeader->colormap_entries, pVisual->ColormapEntries);
 
-        ppix = (Pixel *) malloc(entries * sizeof(Pixel));
-        prgb = (xrgb *) malloc(entries * sizeof(xrgb));
-        defs = (xColorItem *) malloc(entries * sizeof(xColorItem));
+        ppix = xallocarray(entries, sizeof(Pixel));
+        prgb = xallocarray(entries, sizeof(xrgb));
+        defs = xallocarray(entries, sizeof(xColorItem));
 
         for (i = 0; i < entries; i++)
             ppix[i] = i;
@@ -452,28 +442,12 @@ vfbInstallColormap(ColormapPtr pmap)
 }
 
 static void
-vfbUninstallColormap(ColormapPtr pmap)
-{
-    ColormapPtr curpmap = GetInstalledColormap(pmap->pScreen);
-
-    if (pmap == curpmap) {
-        if (pmap->mid != pmap->pScreen->defColormap) {
-            dixLookupResourceByType((void **) &curpmap,
-                                    pmap->pScreen->defColormap,
-                                    RT_COLORMAP, serverClient,
-                                    DixInstallAccess);
-            (*pmap->pScreen->InstallColormap) (curpmap);
-        }
-    }
-}
-
-static void
 vfbStoreColors(ColormapPtr pmap, int ndef, xColorItem * pdefs)
 {
     XWDColor *pXWDCmap;
     int i;
 
-    if (pmap != GetInstalledColormap(pmap->pScreen)) {
+    if (pmap != GetInstalledmiColormap(pmap->pScreen)) {
         return;
     }
 
@@ -506,7 +480,7 @@ vfbSaveScreen(ScreenPtr pScreen, int on)
 
 /* this flushes any changes to the screens out to the mmapped file */
 static void
-vfbBlockHandler(void *blockData, OSTimePtr pTimeout, void *pReadmask)
+vfbBlockHandler(void *blockData, void *timeout)
 {
     int i;
 
@@ -527,7 +501,7 @@ vfbBlockHandler(void *blockData, OSTimePtr pTimeout, void *pReadmask)
 }
 
 static void
-vfbWakeupHandler(void *blockData, int result, void *pReadmask)
+vfbWakeupHandler(void *blockData, int result)
 {
 }
 
@@ -761,16 +735,8 @@ static Bool
 vfbCloseScreen(ScreenPtr pScreen)
 {
     vfbScreenInfoPtr pvfb = &vfbScreens[pScreen->myNum];
-    int i;
 
     pScreen->CloseScreen = pvfb->closeScreen;
-
-    /*
-     * XXX probably lots of stuff to clean.  For now,
-     * clear installed colormaps so that server reset works correctly.
-     */
-    for (i = 0; i < screenInfo.numScreens; i++)
-        SetInstalledColormap(screenInfo.screens[i], NULL);
 
     /*
      * fb overwrites miCloseScreen, so do this here
@@ -783,15 +749,131 @@ vfbCloseScreen(ScreenPtr pScreen)
 }
 
 static Bool
+vfbRROutputValidateMode(ScreenPtr           pScreen,
+                        RROutputPtr         output,
+                        RRModePtr           mode)
+{
+    rrScrPriv(pScreen);
+
+    if (pScrPriv->minWidth <= mode->mode.width &&
+        pScrPriv->maxWidth >= mode->mode.width &&
+        pScrPriv->minHeight <= mode->mode.height &&
+        pScrPriv->maxHeight >= mode->mode.height)
+        return TRUE;
+    else
+        return FALSE;
+}
+
+static Bool
+vfbRRScreenSetSize(ScreenPtr  pScreen,
+                   CARD16     width,
+                   CARD16     height,
+                   CARD32     mmWidth,
+                   CARD32     mmHeight)
+{
+    // Prevent screen updates while we change things around
+    SetRootClip(pScreen, ROOT_CLIP_NONE);
+
+    pScreen->width = width;
+    pScreen->height = height;
+    pScreen->mmWidth = mmWidth;
+    pScreen->mmHeight = mmHeight;
+
+    // Restore the ability to update screen, now with new dimensions
+    SetRootClip(pScreen, ROOT_CLIP_FULL);
+
+    RRScreenSizeNotify (pScreen);
+    RRTellChanged(pScreen);
+
+    return TRUE;
+}
+
+static Bool
+vfbRRCrtcSet(ScreenPtr pScreen,
+             RRCrtcPtr crtc,
+             RRModePtr mode,
+             int       x,
+             int       y,
+             Rotation  rotation,
+             int       numOutput,
+             RROutputPtr *outputs)
+{
+  return RRCrtcNotify(crtc, mode, x, y, rotation, NULL, numOutput, outputs);
+}
+
+static Bool
+vfbRRGetInfo(ScreenPtr pScreen, Rotation *rotations)
+{
+    return TRUE;
+}
+
+static Bool
+vfbRandRInit(ScreenPtr pScreen)
+{
+    rrScrPrivPtr pScrPriv;
+#if RANDR_12_INTERFACE
+    RRModePtr  mode;
+    RRCrtcPtr  crtc;
+    RROutputPtr        output;
+    xRRModeInfo modeInfo;
+    char       name[64];
+#endif
+
+    if (!RRScreenInit (pScreen))
+       return FALSE;
+    pScrPriv = rrGetScrPriv(pScreen);
+    pScrPriv->rrGetInfo = vfbRRGetInfo;
+#if RANDR_12_INTERFACE
+    pScrPriv->rrCrtcSet = vfbRRCrtcSet;
+    pScrPriv->rrScreenSetSize = vfbRRScreenSetSize;
+    pScrPriv->rrOutputSetProperty = NULL;
+#if RANDR_13_INTERFACE
+    pScrPriv->rrOutputGetProperty = NULL;
+#endif
+    pScrPriv->rrOutputValidateMode = vfbRROutputValidateMode;
+    pScrPriv->rrModeDestroy = NULL;
+
+    RRScreenSetSizeRange (pScreen,
+                         1, 1,
+                         pScreen->width, pScreen->height);
+
+    sprintf (name, "%dx%d", pScreen->width, pScreen->height);
+    memset (&modeInfo, '\0', sizeof (modeInfo));
+    modeInfo.width = pScreen->width;
+    modeInfo.height = pScreen->height;
+    modeInfo.nameLength = strlen (name);
+
+    mode = RRModeGet (&modeInfo, name);
+    if (!mode)
+       return FALSE;
+
+    crtc = RRCrtcCreate (pScreen, NULL);
+    if (!crtc)
+       return FALSE;
+
+    output = RROutputCreate (pScreen, "screen", 6, NULL);
+    if (!output)
+       return FALSE;
+    if (!RROutputSetClones (output, NULL, 0))
+       return FALSE;
+    if (!RROutputSetModes (output, &mode, 1, 0))
+       return FALSE;
+    if (!RROutputSetCrtcs (output, &crtc, 1))
+       return FALSE;
+    if (!RROutputSetConnection (output, RR_Connected))
+       return FALSE;
+    RRCrtcNotify (crtc, mode, 0, 0, RR_Rotate_0, NULL, 1, &output);
+#endif
+    return TRUE;
+}
+
+static Bool
 vfbScreenInit(ScreenPtr pScreen, int argc, char **argv)
 {
     vfbScreenInfoPtr pvfb = &vfbScreens[pScreen->myNum];
     int dpix = monitorResolution, dpiy = monitorResolution;
     int ret;
     char *pbits;
-
-    if (!dixRegisterPrivateKey(&cmapScrPrivateKeyRec, PRIVATE_SCREEN, 0))
-        return FALSE;
 
     if (dpix == 0)
         dpix = 100;
@@ -858,9 +940,10 @@ vfbScreenInit(ScreenPtr pScreen, int argc, char **argv)
     if (!ret)
         return FALSE;
 
+    if (!vfbRandRInit(pScreen))
+       return FALSE;
+
     pScreen->InstallColormap = vfbInstallColormap;
-    pScreen->UninstallColormap = vfbUninstallColormap;
-    pScreen->ListInstalledColormaps = vfbListInstalledColormaps;
 
     pScreen->SaveScreen = vfbSaveScreen;
     pScreen->StoreColors = vfbStoreColors;
@@ -883,26 +966,11 @@ vfbScreenInit(ScreenPtr pScreen, int argc, char **argv)
 
 }                               /* end vfbScreenInit */
 
-static const ExtensionModule vfbExtensions[] = {
-#ifdef GLXEXT
-    { GlxExtensionInit, "GLX", &noGlxExtension },
-#endif
-};
-
-static
-void vfbExtensionInit(void)
-{
-    LoadExtensionList(vfbExtensions, ARRAY_SIZE(vfbExtensions), TRUE);
-}
-
 void
 InitOutput(ScreenInfo * screen_info, int argc, char **argv)
 {
     int i;
     int NumFormats = 0;
-
-    if (serverGeneration == 1)
-        vfbExtensionInit();
 
     /* initialize pixmap formats */
 
@@ -927,6 +995,8 @@ InitOutput(ScreenInfo * screen_info, int argc, char **argv)
 #endif
         vfbPixmapDepths[32] = TRUE;
     }
+
+    xorgGlxCreateVendor();
 
     for (i = 1; i <= 32; i++) {
         if (vfbPixmapDepths[i]) {

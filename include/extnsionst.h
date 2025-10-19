@@ -26,13 +26,13 @@ Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
 
                         All Rights Reserved
 
-Permission to use, copy, modify, and distribute this software and its 
-documentation for any purpose and without fee is hereby granted, 
+Permission to use, copy, modify, and distribute this software and its
+documentation for any purpose and without fee is hereby granted,
 provided that the above copyright notice appear in all copies and that
-both that copyright notice and this permission notice appear in 
+both that copyright notice and this permission notice appear in
 supporting documentation, and that the name of Digital not be
 used in advertising or publicity pertaining to distribution of the
-software without specific, written prior permission.  
+software without specific, written prior permission.
 
 DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
 ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
@@ -64,15 +64,13 @@ typedef struct _ExtensionEntry {
     int eventLast;
     int errorBase;
     int errorLast;
-    int num_aliases;
-    const char **aliases;
     void *extPrivate;
     unsigned short (*MinorOpcode) (     /* called for errors */
                                       ClientPtr /* client */ );
     PrivateRec *devPrivates;
 } ExtensionEntry;
 
-/* 
+/*
  * The arguments may be different for extension event swapping functions.
  * Deal with this by casting when initializing the event's EventSwapVector[]
  * entries.
@@ -85,11 +83,6 @@ extern _X_EXPORT void
 NotImplemented(                 /* FIXME: this may move to another file... */
                   xEvent *, xEvent *) _X_NORETURN;
 
-#define    SetGCVector(pGC, VectorElement, NewRoutineAddress, Atom)    \
-    pGC->VectorElement = NewRoutineAddress;
-
-#define    GetGCValue(pGC, GCElement)    (pGC->GCElement)
-
 extern _X_EXPORT ExtensionEntry *
 AddExtension(const char * /*name */ ,
              int /*NumEvents */ ,
@@ -99,10 +92,6 @@ AddExtension(const char * /*name */ ,
              void (* /*CloseDownProc */ )(ExtensionEntry * /*extension */ ),
              unsigned short (* /*MinorOpcodeProc */ )(ClientPtr /*client */ )
     );
-
-extern _X_EXPORT Bool
-AddExtensionAlias(const char * /*alias */ ,
-                  ExtensionEntry * /*extension */ );
 
 extern _X_EXPORT ExtensionEntry *
 CheckExtension(const char *extname);

@@ -158,7 +158,7 @@ xnestOpenScreen(ScreenPtr pScreen, int argc, char *argv[])
     if (!dixRegisterPrivateKey(&xnestCursorScreenKeyRec, PRIVATE_SCREEN, 0))
         return FALSE;
 
-    visuals = (VisualPtr) malloc(xnestNumVisuals * sizeof(VisualRec));
+    visuals = xallocarray(xnestNumVisuals, sizeof(VisualRec));
     numVisuals = 0;
 
     depths = (DepthPtr) malloc(MAXDEPTH * sizeof(DepthRec));
@@ -224,7 +224,7 @@ xnestOpenScreen(ScreenPtr pScreen, int argc, char *argv[])
 
         numVisuals++;
     }
-    visuals = (VisualPtr) realloc(visuals, numVisuals * sizeof(VisualRec));
+    visuals = reallocarray(visuals, numVisuals, sizeof(VisualRec));
 
     defaultVisual = visuals[xnestDefaultVisualIndex].vid;
     rootDepth = visuals[xnestDefaultVisualIndex].nplanes;
@@ -248,7 +248,7 @@ xnestOpenScreen(ScreenPtr pScreen, int argc, char *argv[])
     pScreen->whitePixel = xnestWhitePixel;
     pScreen->blackPixel = xnestBlackPixel;
     /* GCperDepth */
-    /* PixmapPerDepth */
+    /* defaultStipple */
     pScreen->devPrivate = NULL;
     /* WindowPrivateLen */
     /* WindowPrivateSizes */
@@ -263,7 +263,6 @@ xnestOpenScreen(ScreenPtr pScreen, int argc, char *argv[])
     pScreen->SaveScreen = xnestSaveScreen;
     pScreen->GetImage = xnestGetImage;
     pScreen->GetSpans = xnestGetSpans;
-    pScreen->SourceValidate = NULL;
 
     /* Window Procedures */
 

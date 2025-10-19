@@ -4,13 +4,13 @@ and the Massachusetts Institute of Technology, Cambridge, Massachusetts.
 
                         All Rights Reserved
 
-Permission to use, copy, modify, and distribute this software and its 
-documentation for any purpose and without fee is hereby granted, 
+Permission to use, copy, modify, and distribute this software and its
+documentation for any purpose and without fee is hereby granted,
 provided that the above copyright notice appear in all copies and that
-both that copyright notice and this permission notice appear in 
+both that copyright notice and this permission notice appear in
 supporting documentation, and that the names of Digital or MIT not be
 used in advertising or publicity pertaining to distribution of the
-software without specific, written prior permission.  
+software without specific, written prior permission.
 
 DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
 ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
@@ -949,7 +949,6 @@ ProcXvShmPutImage(ClientPtr client)
 static int
 ProcXvShmPutImage(ClientPtr client)
 {
-    SendErrorToClient(client, XvReqCode, xv_ShmPutImage, 0, BadImplementation);
     return BadImplementation;
 }
 #endif
@@ -1108,7 +1107,6 @@ ProcXvDispatch(ClientPtr client)
     UpdateCurrentTime();
 
     if (stuff->data >= xvNumRequests) {
-        SendErrorToClient(client, XvReqCode, stuff->data, 0, BadRequest);
         return BadRequest;
     }
 
@@ -1117,56 +1115,62 @@ ProcXvDispatch(ClientPtr client)
 
 /* Swapped Procs */
 
-static int
+static int _X_COLD
 SProcXvQueryExtension(ClientPtr client)
 {
     REQUEST(xvQueryExtensionReq);
+    REQUEST_SIZE_MATCH(xvQueryExtensionReq);
     swaps(&stuff->length);
     return XvProcVector[xv_QueryExtension] (client);
 }
 
-static int
+static int _X_COLD
 SProcXvQueryAdaptors(ClientPtr client)
 {
     REQUEST(xvQueryAdaptorsReq);
+    REQUEST_SIZE_MATCH(xvQueryAdaptorsReq);
     swaps(&stuff->length);
     swapl(&stuff->window);
     return XvProcVector[xv_QueryAdaptors] (client);
 }
 
-static int
+static int _X_COLD
 SProcXvQueryEncodings(ClientPtr client)
 {
     REQUEST(xvQueryEncodingsReq);
+    REQUEST_SIZE_MATCH(xvQueryEncodingsReq);
     swaps(&stuff->length);
     swapl(&stuff->port);
     return XvProcVector[xv_QueryEncodings] (client);
 }
 
-static int
+static int _X_COLD
 SProcXvGrabPort(ClientPtr client)
 {
     REQUEST(xvGrabPortReq);
+    REQUEST_SIZE_MATCH(xvGrabPortReq);
     swaps(&stuff->length);
     swapl(&stuff->port);
     swapl(&stuff->time);
     return XvProcVector[xv_GrabPort] (client);
 }
 
-static int
+static int _X_COLD
 SProcXvUngrabPort(ClientPtr client)
 {
     REQUEST(xvUngrabPortReq);
+    REQUEST_SIZE_MATCH(xvUngrabPortReq);
     swaps(&stuff->length);
     swapl(&stuff->port);
     swapl(&stuff->time);
     return XvProcVector[xv_UngrabPort] (client);
 }
 
-static int
+static int _X_COLD
 SProcXvPutVideo(ClientPtr client)
 {
     REQUEST(xvPutVideoReq);
+    REQUEST_SIZE_MATCH(xvPutVideoReq);
     swaps(&stuff->length);
     swapl(&stuff->port);
     swapl(&stuff->drawable);
@@ -1182,10 +1186,11 @@ SProcXvPutVideo(ClientPtr client)
     return XvProcVector[xv_PutVideo] (client);
 }
 
-static int
+static int _X_COLD
 SProcXvPutStill(ClientPtr client)
 {
     REQUEST(xvPutStillReq);
+    REQUEST_SIZE_MATCH(xvPutStillReq);
     swaps(&stuff->length);
     swapl(&stuff->port);
     swapl(&stuff->drawable);
@@ -1201,10 +1206,11 @@ SProcXvPutStill(ClientPtr client)
     return XvProcVector[xv_PutStill] (client);
 }
 
-static int
+static int _X_COLD
 SProcXvGetVideo(ClientPtr client)
 {
     REQUEST(xvGetVideoReq);
+    REQUEST_SIZE_MATCH(xvGetVideoReq);
     swaps(&stuff->length);
     swapl(&stuff->port);
     swapl(&stuff->drawable);
@@ -1220,10 +1226,11 @@ SProcXvGetVideo(ClientPtr client)
     return XvProcVector[xv_GetVideo] (client);
 }
 
-static int
+static int _X_COLD
 SProcXvGetStill(ClientPtr client)
 {
     REQUEST(xvGetStillReq);
+    REQUEST_SIZE_MATCH(xvGetStillReq);
     swaps(&stuff->length);
     swapl(&stuff->port);
     swapl(&stuff->drawable);
@@ -1239,10 +1246,11 @@ SProcXvGetStill(ClientPtr client)
     return XvProcVector[xv_GetStill] (client);
 }
 
-static int
+static int _X_COLD
 SProcXvPutImage(ClientPtr client)
 {
     REQUEST(xvPutImageReq);
+    REQUEST_AT_LEAST_SIZE(xvPutImageReq);
     swaps(&stuff->length);
     swapl(&stuff->port);
     swapl(&stuff->drawable);
@@ -1262,10 +1270,11 @@ SProcXvPutImage(ClientPtr client)
 }
 
 #ifdef MITSHM
-static int
+static int _X_COLD
 SProcXvShmPutImage(ClientPtr client)
 {
     REQUEST(xvShmPutImageReq);
+    REQUEST_SIZE_MATCH(xvShmPutImageReq);
     swaps(&stuff->length);
     swapl(&stuff->port);
     swapl(&stuff->drawable);
@@ -1289,38 +1298,42 @@ SProcXvShmPutImage(ClientPtr client)
 #define SProcXvShmPutImage ProcXvShmPutImage
 #endif
 
-static int
+static int _X_COLD
 SProcXvSelectVideoNotify(ClientPtr client)
 {
     REQUEST(xvSelectVideoNotifyReq);
+    REQUEST_SIZE_MATCH(xvSelectVideoNotifyReq);
     swaps(&stuff->length);
     swapl(&stuff->drawable);
     return XvProcVector[xv_SelectVideoNotify] (client);
 }
 
-static int
+static int _X_COLD
 SProcXvSelectPortNotify(ClientPtr client)
 {
     REQUEST(xvSelectPortNotifyReq);
+    REQUEST_SIZE_MATCH(xvSelectPortNotifyReq);
     swaps(&stuff->length);
     swapl(&stuff->port);
     return XvProcVector[xv_SelectPortNotify] (client);
 }
 
-static int
+static int _X_COLD
 SProcXvStopVideo(ClientPtr client)
 {
     REQUEST(xvStopVideoReq);
+    REQUEST_SIZE_MATCH(xvStopVideoReq);
     swaps(&stuff->length);
     swapl(&stuff->port);
     swapl(&stuff->drawable);
     return XvProcVector[xv_StopVideo] (client);
 }
 
-static int
+static int _X_COLD
 SProcXvSetPortAttribute(ClientPtr client)
 {
     REQUEST(xvSetPortAttributeReq);
+    REQUEST_SIZE_MATCH(xvSetPortAttributeReq);
     swaps(&stuff->length);
     swapl(&stuff->port);
     swapl(&stuff->attribute);
@@ -1328,20 +1341,22 @@ SProcXvSetPortAttribute(ClientPtr client)
     return XvProcVector[xv_SetPortAttribute] (client);
 }
 
-static int
+static int _X_COLD
 SProcXvGetPortAttribute(ClientPtr client)
 {
     REQUEST(xvGetPortAttributeReq);
+    REQUEST_SIZE_MATCH(xvGetPortAttributeReq);
     swaps(&stuff->length);
     swapl(&stuff->port);
     swapl(&stuff->attribute);
     return XvProcVector[xv_GetPortAttribute] (client);
 }
 
-static int
+static int _X_COLD
 SProcXvQueryBestSize(ClientPtr client)
 {
     REQUEST(xvQueryBestSizeReq);
+    REQUEST_SIZE_MATCH(xvQueryBestSizeReq);
     swaps(&stuff->length);
     swapl(&stuff->port);
     swaps(&stuff->vid_w);
@@ -1351,19 +1366,21 @@ SProcXvQueryBestSize(ClientPtr client)
     return XvProcVector[xv_QueryBestSize] (client);
 }
 
-static int
+static int _X_COLD
 SProcXvQueryPortAttributes(ClientPtr client)
 {
     REQUEST(xvQueryPortAttributesReq);
+    REQUEST_SIZE_MATCH(xvQueryPortAttributesReq);
     swaps(&stuff->length);
     swapl(&stuff->port);
     return XvProcVector[xv_QueryPortAttributes] (client);
 }
 
-static int
+static int _X_COLD
 SProcXvQueryImageAttributes(ClientPtr client)
 {
     REQUEST(xvQueryImageAttributesReq);
+    REQUEST_SIZE_MATCH(xvQueryImageAttributesReq);
     swaps(&stuff->length);
     swapl(&stuff->port);
     swapl(&stuff->id);
@@ -1372,10 +1389,11 @@ SProcXvQueryImageAttributes(ClientPtr client)
     return XvProcVector[xv_QueryImageAttributes] (client);
 }
 
-static int
+static int _X_COLD
 SProcXvListImageFormats(ClientPtr client)
 {
     REQUEST(xvListImageFormatsReq);
+    REQUEST_SIZE_MATCH(xvListImageFormatsReq);
     swaps(&stuff->length);
     swapl(&stuff->port);
     return XvProcVector[xv_ListImageFormats] (client);
@@ -1401,7 +1419,7 @@ SProcXvQueryExtension,
         SProcXvListImageFormats,
         SProcXvQueryImageAttributes, SProcXvPutImage, SProcXvShmPutImage,};
 
-int
+int _X_COLD
 SProcXvDispatch(ClientPtr client)
 {
     REQUEST(xReq);
@@ -1409,7 +1427,6 @@ SProcXvDispatch(ClientPtr client)
     UpdateCurrentTime();
 
     if (stuff->data >= xvNumRequests) {
-        SendErrorToClient(client, XvReqCode, stuff->data, 0, BadRequest);
         return BadRequest;
     }
 
@@ -1476,11 +1493,13 @@ XineramaXvShmPutImage(ClientPtr client)
 {
     REQUEST(xvShmPutImageReq);
     PanoramiXRes *draw, *gc, *port;
-    Bool send_event = stuff->send_event;
+    Bool send_event;
     Bool isRoot;
     int result, i, x, y;
 
     REQUEST_SIZE_MATCH(xvShmPutImageReq);
+
+    send_event = stuff->send_event;
 
     result = dixLookupResourceByClass((void **) &draw, stuff->drawable,
                                       XRC_DRAWABLE, client, DixWriteAccess);

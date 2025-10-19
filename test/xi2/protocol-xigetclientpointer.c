@@ -40,29 +40,14 @@
 
 #include "protocol-common.h"
 
-struct {
+static struct {
     int cp_is_set;
     DeviceIntPtr dev;
     int win;
 } test_data;
 
-static ClientRec client_window;
+extern ClientRec client_window;
 static ClientRec client_request;
-
-int
-__wrap_dixLookupClient(ClientPtr *pClient, XID rid, ClientPtr client,
-                       Mask access)
-{
-    if (rid == ROOT_WINDOW_ID)
-        return BadWindow;
-
-    if (rid == CLIENT_WINDOW_ID) {
-        *pClient = &client_window;
-        return Success;
-    }
-
-    return __real_dixLookupClient(pClient, rid, client, access);
-}
 
 static void
 reply_XIGetClientPointer(ClientPtr client, int len, char *data, void *userdata)
@@ -124,6 +109,11 @@ test_XIGetClientPointer(void)
     request.win = INVALID_WINDOW_ID;
     request_XIGetClientPointer(&client_request, &request, BadWindow);
 
+    printf("Testing invalid length\n");
+    client_request.req_len -= 4;
+    request_XIGetClientPointer(&client_request, &request, BadLength);
+    client_request.req_len += 4;
+
     test_data.cp_is_set = FALSE;
 
     printf("Testing window None, unset ClientPointer.\n");
@@ -152,7 +142,7 @@ test_XIGetClientPointer(void)
 }
 
 int
-main(int argc, char **argv)
+protocol_xigetclientpointer_test(void)
 {
     init_simple();
     client_window = init_client(0, NULL);

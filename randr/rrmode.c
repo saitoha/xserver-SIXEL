@@ -79,7 +79,7 @@ RRModeCreate(xRRModeInfo * modeInfo, const char *name, ScreenPtr userScreen)
     mode->userScreen = userScreen;
 
     if (num_modes)
-        newModes = realloc(modes, (num_modes + 1) * sizeof(RRModePtr));
+        newModes = reallocarray(modes, num_modes + 1, sizeof(RRModePtr));
     else
         newModes = malloc(sizeof(RRModePtr));
 
@@ -166,7 +166,7 @@ RRModesForScreen(ScreenPtr pScreen, int *num_ret)
     RRModePtr *screen_modes;
     int num_screen_modes = 0;
 
-    screen_modes = malloc((num_modes ? num_modes : 1) * sizeof(RRModePtr));
+    screen_modes = xallocarray((num_modes ? num_modes : 1), sizeof(RRModePtr));
     if (!screen_modes)
         return NULL;
 
@@ -357,6 +357,9 @@ ProcRRAddOutputMode(ClientPtr client)
     VERIFY_RR_OUTPUT(stuff->output, output, DixReadAccess);
     VERIFY_RR_MODE(stuff->mode, mode, DixUseAccess);
 
+    if (RROutputIsLeased(output))
+        return BadAccess;
+
     return RROutputAddUserMode(output, mode);
 }
 
@@ -370,6 +373,9 @@ ProcRRDeleteOutputMode(ClientPtr client)
     REQUEST_SIZE_MATCH(xRRDeleteOutputModeReq);
     VERIFY_RR_OUTPUT(stuff->output, output, DixReadAccess);
     VERIFY_RR_MODE(stuff->mode, mode, DixUseAccess);
+
+    if (RROutputIsLeased(output))
+        return BadAccess;
 
     return RROutputDeleteUserMode(output, mode);
 }

@@ -44,10 +44,11 @@
 #include "exevents.h"
 #include "xiallowev.h"
 
-int
+int _X_COLD
 SProcXIAllowEvents(ClientPtr client)
 {
     REQUEST(xXIAllowEventsReq);
+    REQUEST_AT_LEAST_SIZE(xXIAllowEventsReq);
 
     swaps(&stuff->length);
     swaps(&stuff->deviceid);
@@ -55,6 +56,7 @@ SProcXIAllowEvents(ClientPtr client)
     if (stuff->length > 3) {
         xXI2_2AllowEventsReq *req_xi22 = (xXI2_2AllowEventsReq *) stuff;
 
+        REQUEST_AT_LEAST_SIZE(xXI2_2AllowEventsReq);
         swapl(&req_xi22->touchid);
         swapl(&req_xi22->grab_window);
     }

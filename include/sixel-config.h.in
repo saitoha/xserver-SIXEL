@@ -1,0 +1,14 @@
+/* sixel-config.h.in: internal config for Xsixel DDX */
+#ifndef _SIXEL_CONFIG_H_
+#define _SIXEL_CONFIG_H_
+
+#include <dix-config.h>
+
+/* Have libsixel available for Xsixel */
+#undef HAVE_LIBSIXEL
+
+/* Have libchafa available for Xsixel */
+#undef HAVE_CHAFA
+
+#endif /* _SIXEL_CONFIG_H_ */
+

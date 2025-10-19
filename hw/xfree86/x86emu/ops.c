@@ -5530,7 +5530,7 @@ x86emuOp_opc80_byte_RM_IMM(u8 X86EMU_UNUSED(op1))
     if (DEBUG_DECODE()) {
         /* XXX DECODE_PRINTF may be changed to something more
            general, so that it is important to leave the strings
-           in the same format, even though the result is that the 
+           in the same format, even though the result is that the
            above test is done twice. */
 
         switch (rh) {
@@ -5658,7 +5658,7 @@ x86emuOp_opc81_word_RM_IMM(u8 X86EMU_UNUSED(op1))
     if (DEBUG_DECODE()) {
         /* XXX DECODE_PRINTF may be changed to something more
            general, so that it is important to leave the strings
-           in the same format, even though the result is that the 
+           in the same format, even though the result is that the
            above test is done twice. */
 
         switch (rh) {
@@ -5690,7 +5690,7 @@ x86emuOp_opc81_word_RM_IMM(u8 X86EMU_UNUSED(op1))
     }
 #endif
     /*
-     * Know operation, decode the mod byte to find the addressing 
+     * Know operation, decode the mod byte to find the addressing
      * mode.
      */
     switch (mod) {
@@ -5853,7 +5853,7 @@ x86emuOp_opc82_byte_RM_IMM(u8 X86EMU_UNUSED(op1))
     if (DEBUG_DECODE()) {
         /* XXX DECODE_PRINTF may be changed to something more
            general, so that it is important to leave the strings
-           in the same format, even though the result is that the 
+           in the same format, even though the result is that the
            above test is done twice. */
         switch (rh) {
         case 0:
@@ -5977,7 +5977,7 @@ x86emuOp_opc83_word_RM_IMM(u8 X86EMU_UNUSED(op1))
     if (DEBUG_DECODE()) {
         /* XXX DECODE_PRINTF may be changed to something more
            general, so that it is important to leave the strings
-           in the same format, even though the result is that the 
+           in the same format, even though the result is that the
            above test is done twice. */
         switch (rh) {
         case 0:
@@ -7472,7 +7472,7 @@ x86emuOp_call_far_IMM(u8 X86EMU_UNUSED(op1))
     CALL_TRACE(M.x86.saved_cs, M.x86.saved_ip, farseg, faroff, "FAR ");
 
     /* XXX
-     * 
+     *
      * Hooked interrupt vectors calling into our "BIOS" will cause
      * problems unless all intersegment stuff is checked for BIOS
      * access.  Check needed here.  For moment, let it alone.
@@ -8688,7 +8688,7 @@ x86emuOp_opcC0_byte_RM_MEM(u8 X86EMU_UNUSED(op1))
     if (DEBUG_DECODE()) {
         /* XXX DECODE_PRINTF may be changed to something more
            general, so that it is important to leave the strings
-           in the same format, even though the result is that the 
+           in the same format, even though the result is that the
            above test is done twice. */
 
         switch (rh) {
@@ -8797,7 +8797,7 @@ x86emuOp_opcC1_word_RM_MEM(u8 X86EMU_UNUSED(op1))
     if (DEBUG_DECODE()) {
         /* XXX DECODE_PRINTF may be changed to something more
            general, so that it is important to leave the strings
-           in the same format, even though the result is that the 
+           in the same format, even though the result is that the
            above test is done twice. */
 
         switch (rh) {
@@ -8949,7 +8949,11 @@ x86emuOp_ret_near_IMM(u8 X86EMU_UNUSED(op1))
     DECODE_PRINTF2("%x\n", imm);
     RETURN_TRACE("RET", M.x86.saved_cs, M.x86.saved_ip);
     TRACE_AND_STEP();
-    M.x86.R_IP = pop_word();
+    if (M.x86.mode & SYSMODE_PREFIX_DATA) {
+        M.x86.R_EIP = pop_long();
+    } else {
+        M.x86.R_IP = pop_word();
+    }
     M.x86.R_SP += imm;
     DECODE_CLEAR_SEGOVR();
     END_OF_INSTR();
@@ -8966,7 +8970,11 @@ x86emuOp_ret_near(u8 X86EMU_UNUSED(op1))
     DECODE_PRINTF("RET\n");
     RETURN_TRACE("RET", M.x86.saved_cs, M.x86.saved_ip);
     TRACE_AND_STEP();
-    M.x86.R_IP = pop_word();
+    if (M.x86.mode & SYSMODE_PREFIX_DATA) {
+        M.x86.R_EIP = pop_long();
+    } else {
+        M.x86.R_IP = pop_word();
+    }
     DECODE_CLEAR_SEGOVR();
     END_OF_INSTR();
 }
@@ -9259,8 +9267,13 @@ x86emuOp_enter(u8 X86EMU_UNUSED(op1))
     frame_pointer = M.x86.R_SP;
     if (nesting > 0) {
         for (i = 1; i < nesting; i++) {
-            M.x86.R_BP -= 2;
-            push_word(fetch_data_word_abs(M.x86.R_SS, M.x86.R_BP));
+            if (M.x86.mode & SYSMODE_PREFIX_DATA) {
+                M.x86.R_BP -= 4;
+                push_long(fetch_data_long_abs(M.x86.R_SS, M.x86.R_BP));
+            } else {
+                M.x86.R_BP -= 2;
+                push_word(fetch_data_word_abs(M.x86.R_SS, M.x86.R_BP));
+            }
         }
         push_word(frame_pointer);
     }
@@ -9281,7 +9294,11 @@ x86emuOp_leave(u8 X86EMU_UNUSED(op1))
     DECODE_PRINTF("LEAVE\n");
     TRACE_AND_STEP();
     M.x86.R_SP = M.x86.R_BP;
-    M.x86.R_BP = pop_word();
+    if (M.x86.mode & SYSMODE_PREFIX_DATA) {
+        M.x86.R_EBP = pop_long();
+    } else {
+        M.x86.R_BP = pop_word();
+    }
     DECODE_CLEAR_SEGOVR();
     END_OF_INSTR();
 }
@@ -9301,8 +9318,13 @@ x86emuOp_ret_far_IMM(u8 X86EMU_UNUSED(op1))
     DECODE_PRINTF2("%x\n", imm);
     RETURN_TRACE("RETF", M.x86.saved_cs, M.x86.saved_ip);
     TRACE_AND_STEP();
-    M.x86.R_IP = pop_word();
-    M.x86.R_CS = pop_word();
+    if (M.x86.mode & SYSMODE_PREFIX_DATA) {
+        M.x86.R_EIP = pop_long();
+        M.x86.R_CS = pop_long() & 0xffff;
+    } else {
+        M.x86.R_IP = pop_word();
+        M.x86.R_CS = pop_word();
+    }
     M.x86.R_SP += imm;
     DECODE_CLEAR_SEGOVR();
     END_OF_INSTR();
@@ -9319,8 +9341,13 @@ x86emuOp_ret_far(u8 X86EMU_UNUSED(op1))
     DECODE_PRINTF("RETF\n");
     RETURN_TRACE("RETF", M.x86.saved_cs, M.x86.saved_ip);
     TRACE_AND_STEP();
-    M.x86.R_IP = pop_word();
-    M.x86.R_CS = pop_word();
+    if (M.x86.mode & SYSMODE_PREFIX_DATA) {
+        M.x86.R_EIP = pop_long();
+        M.x86.R_CS = pop_long() & 0xffff;
+    } else {
+        M.x86.R_IP = pop_word();
+        M.x86.R_CS = pop_word();
+    }
     DECODE_CLEAR_SEGOVR();
     END_OF_INSTR();
 }
@@ -9421,9 +9448,15 @@ x86emuOp_iret(u8 X86EMU_UNUSED(op1))
 
     TRACE_AND_STEP();
 
-    M.x86.R_IP = pop_word();
-    M.x86.R_CS = pop_word();
-    M.x86.R_FLG = pop_word();
+    if (M.x86.mode & SYSMODE_PREFIX_DATA) {
+        M.x86.R_EIP = pop_long();
+        M.x86.R_CS = pop_long() & 0xffff;
+        M.x86.R_EFLG = (pop_long() & 0x257FD5) | (M.x86.R_EFLG & 0x1A0000);
+    } else {
+        M.x86.R_IP = pop_word();
+        M.x86.R_CS = pop_word();
+        M.x86.R_FLG = pop_word();
+    }
     DECODE_CLEAR_SEGOVR();
     END_OF_INSTR();
 }
@@ -9700,7 +9733,7 @@ x86emuOp_opcD2_byte_RM_CL(u8 X86EMU_UNUSED(op1))
     if (DEBUG_DECODE()) {
         /* XXX DECODE_PRINTF may be changed to something more
            general, so that it is important to leave the strings
-           in the same format, even though the result is that the 
+           in the same format, even though the result is that the
            above test is done twice. */
         switch (rh) {
         case 0:
@@ -9795,7 +9828,7 @@ x86emuOp_opcD3_word_RM_CL(u8 X86EMU_UNUSED(op1))
     if (DEBUG_DECODE()) {
         /* XXX DECODE_PRINTF may be changed to something more
            general, so that it is important to leave the strings
-           in the same format, even though the result is that the 
+           in the same format, even though the result is that the
            above test is done twice. */
         switch (rh) {
         case 0:
@@ -11538,7 +11571,7 @@ x86emuOp_opcFE_byte_RM(u8 X86EMU_UNUSED(op1))
     if (DEBUG_DECODE()) {
         /* XXX DECODE_PRINTF may be changed to something more
            general, so that it is important to leave the strings
-           in the same format, even though the result is that the 
+           in the same format, even though the result is that the
            above test is done twice. */
 
         switch (rh) {
@@ -11740,19 +11773,36 @@ x86emuOp_opcFF_word_RM(u8 X86EMU_UNUSED(op1))
             }
             break;
         case 2:                /* call word ptr ... */
-            destval = fetch_data_word(destoffset);
-            TRACE_AND_STEP();
-            push_word(M.x86.R_IP);
-            M.x86.R_IP = destval;
+            if (M.x86.mode & SYSMODE_PREFIX_DATA) {
+                destval = fetch_data_long(destoffset);
+                TRACE_AND_STEP();
+                push_long(M.x86.R_EIP);
+                M.x86.R_EIP = destval;
+            } else {
+                destval = fetch_data_word(destoffset);
+                TRACE_AND_STEP();
+                push_word(M.x86.R_IP);
+                M.x86.R_IP = destval;
+            }
             break;
         case 3:                /* call far ptr ... */
-            destval = fetch_data_word(destoffset);
-            destval2 = fetch_data_word(destoffset + 2);
-            TRACE_AND_STEP();
-            push_word(M.x86.R_CS);
-            M.x86.R_CS = destval2;
-            push_word(M.x86.R_IP);
-            M.x86.R_IP = destval;
+            if (M.x86.mode & SYSMODE_PREFIX_DATA) {
+                destval = fetch_data_long(destoffset);
+                destval2 = fetch_data_word(destoffset + 4);
+                TRACE_AND_STEP();
+                push_long(M.x86.R_CS);
+                M.x86.R_CS = destval2;
+                push_long(M.x86.R_EIP);
+                M.x86.R_EIP = destval;
+            } else {
+                destval = fetch_data_word(destoffset);
+                destval2 = fetch_data_word(destoffset + 2);
+                TRACE_AND_STEP();
+                push_word(M.x86.R_CS);
+                M.x86.R_CS = destval2;
+                push_word(M.x86.R_IP);
+                M.x86.R_IP = destval;
+            }
             break;
         case 4:                /* jmp word ptr ... */
             destval = fetch_data_word(destoffset);
@@ -11825,19 +11875,36 @@ x86emuOp_opcFF_word_RM(u8 X86EMU_UNUSED(op1))
             }
             break;
         case 2:                /* call word ptr ... */
-            destval = fetch_data_word(destoffset);
-            TRACE_AND_STEP();
-            push_word(M.x86.R_IP);
-            M.x86.R_IP = destval;
+            if (M.x86.mode & SYSMODE_PREFIX_DATA) {
+                destval = fetch_data_long(destoffset);
+                TRACE_AND_STEP();
+                push_long(M.x86.R_EIP);
+                M.x86.R_EIP = destval;
+            } else {
+                destval = fetch_data_word(destoffset);
+                TRACE_AND_STEP();
+                push_word(M.x86.R_IP);
+                M.x86.R_IP = destval;
+            }
             break;
         case 3:                /* call far ptr ... */
-            destval = fetch_data_word(destoffset);
-            destval2 = fetch_data_word(destoffset + 2);
-            TRACE_AND_STEP();
-            push_word(M.x86.R_CS);
-            M.x86.R_CS = destval2;
-            push_word(M.x86.R_IP);
-            M.x86.R_IP = destval;
+            if (M.x86.mode & SYSMODE_PREFIX_DATA) {
+                destval = fetch_data_long(destoffset);
+                destval2 = fetch_data_word(destoffset + 4);
+                TRACE_AND_STEP();
+                push_long(M.x86.R_CS);
+                M.x86.R_CS = destval2;
+                push_long(M.x86.R_EIP);
+                M.x86.R_EIP = destval;
+            } else {
+                destval = fetch_data_word(destoffset);
+                destval2 = fetch_data_word(destoffset + 2);
+                TRACE_AND_STEP();
+                push_word(M.x86.R_CS);
+                M.x86.R_CS = destval2;
+                push_word(M.x86.R_IP);
+                M.x86.R_IP = destval;
+            }
             break;
         case 4:                /* jmp word ptr ... */
             destval = fetch_data_word(destoffset);
@@ -11910,19 +11977,36 @@ x86emuOp_opcFF_word_RM(u8 X86EMU_UNUSED(op1))
             }
             break;
         case 2:                /* call word ptr ... */
-            destval = fetch_data_word(destoffset);
-            TRACE_AND_STEP();
-            push_word(M.x86.R_IP);
-            M.x86.R_IP = destval;
+            if (M.x86.mode & SYSMODE_PREFIX_DATA) {
+                destval = fetch_data_long(destoffset);
+                TRACE_AND_STEP();
+                push_long(M.x86.R_EIP);
+                M.x86.R_EIP = destval;
+            } else {
+                destval = fetch_data_word(destoffset);
+                TRACE_AND_STEP();
+                push_word(M.x86.R_IP);
+                M.x86.R_IP = destval;
+            }
             break;
         case 3:                /* call far ptr ... */
-            destval = fetch_data_word(destoffset);
-            destval2 = fetch_data_word(destoffset + 2);
-            TRACE_AND_STEP();
-            push_word(M.x86.R_CS);
-            M.x86.R_CS = destval2;
-            push_word(M.x86.R_IP);
-            M.x86.R_IP = destval;
+            if (M.x86.mode & SYSMODE_PREFIX_DATA) {
+                destval = fetch_data_long(destoffset);
+                destval2 = fetch_data_word(destoffset + 4);
+                TRACE_AND_STEP();
+                push_long(M.x86.R_CS);
+                M.x86.R_CS = destval2;
+                push_long(M.x86.R_EIP);
+                M.x86.R_EIP = destval;
+            } else {
+                destval = fetch_data_word(destoffset);
+                destval2 = fetch_data_word(destoffset + 2);
+                TRACE_AND_STEP();
+                push_word(M.x86.R_CS);
+                M.x86.R_CS = destval2;
+                push_word(M.x86.R_IP);
+                M.x86.R_IP = destval;
+            }
             break;
         case 4:                /* jmp word ptr ... */
             destval = fetch_data_word(destoffset);
@@ -11993,11 +12077,19 @@ x86emuOp_opcFF_word_RM(u8 X86EMU_UNUSED(op1))
             }
             break;
         case 2:                /* call word ptr ... */
-            destreg = DECODE_RM_WORD_REGISTER(rl);
-            DECODE_PRINTF("\n");
-            TRACE_AND_STEP();
-            push_word(M.x86.R_IP);
-            M.x86.R_IP = *destreg;
+            if (M.x86.mode & SYSMODE_PREFIX_DATA) {
+                destreg = (u16 *)DECODE_RM_LONG_REGISTER(rl);
+                DECODE_PRINTF("\n");
+                TRACE_AND_STEP();
+                push_long(M.x86.R_EIP);
+                M.x86.R_EIP = *destreg;
+            } else {
+                destreg = DECODE_RM_WORD_REGISTER(rl);
+                DECODE_PRINTF("\n");
+                TRACE_AND_STEP();
+                push_word(M.x86.R_IP);
+                M.x86.R_IP = *destreg;
+            }
             break;
         case 3:                /* jmp far ptr ... */
             DECODE_PRINTF("OPERATION UNDEFINED 0XFF \n");

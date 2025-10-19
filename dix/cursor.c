@@ -26,13 +26,13 @@ Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
 
                         All Rights Reserved
 
-Permission to use, copy, modify, and distribute this software and its 
-documentation for any purpose and without fee is hereby granted, 
+Permission to use, copy, modify, and distribute this software and its
+documentation for any purpose and without fee is hereby granted,
 provided that the above copyright notice appear in all copies and that
-both that copyright notice and this permission notice appear in 
+both that copyright notice and this permission notice appear in
 supporting documentation, and that the name of Digital not be
 used in advertising or publicity pertaining to distribution of the
-software without specific, written prior permission.  
+software without specific, written prior permission.
 
 DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
 ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
@@ -80,9 +80,7 @@ FreeCursorBits(CursorBitsPtr bits)
         return;
     free(bits->source);
     free(bits->mask);
-#ifdef ARGB_CURSOR
     free(bits->argb);
-#endif
     dixFiniPrivates(bits, PRIVATE_CURSOR_BITS);
     if (bits->refcnt == 0) {
         GlyphSharePtr *prev, this;
@@ -165,7 +163,6 @@ CheckForEmptyMask(CursorBitsPtr bits)
     while (n--)
         if (*(msk++) != 0)
             return;
-#ifdef ARGB_CURSOR
     if (bits->argb) {
         CARD32 *argb = bits->argb;
 
@@ -174,7 +171,6 @@ CheckForEmptyMask(CursorBitsPtr bits)
             if (*argb++ & 0xff000000)
                 return;
     }
-#endif
     bits->emptyMask = TRUE;
 }
 
@@ -259,9 +255,7 @@ AllocARGBCursor(unsigned char *psrcbits, unsigned char *pmaskbits,
     dixInitPrivates(bits, bits + 1, PRIVATE_CURSOR_BITS)
         bits->source = psrcbits;
     bits->mask = pmaskbits;
-#ifdef ARGB_CURSOR
     bits->argb = argb;
-#endif
     bits->width = cm->width;
     bits->height = cm->height;
     bits->xhot = cm->xhot;
@@ -294,6 +288,29 @@ AllocARGBCursor(unsigned char *psrcbits, unsigned char *pmaskbits,
         goto error;
 
     *ppCurs = pCurs;
+
+    if (argb) {
+        size_t i, size = bits->width * bits->height;
+
+        for (i = 0; i < size; i++) {
+            if ((argb[i] & 0xff000000) == 0 && (argb[i] & 0xffffff) != 0) {
+                /* ARGB data doesn't seem pre-multiplied, fix it */
+                for (i = 0; i < size; i++) {
+                    CARD32 a, ar, ag, ab;
+
+                    a = argb[i] >> 24;
+                    ar = a * ((argb[i] >> 16) & 0xff) / 0xff;
+                    ag = a * ((argb[i] >> 8) & 0xff) / 0xff;
+                    ab = a * (argb[i] & 0xff) / 0xff;
+
+                    argb[i] = a << 24 | ar << 16 | ag << 8 | ab;
+                }
+
+                break;
+            }
+        }
+    }
+
     return Success;
 
  error:
@@ -400,9 +417,7 @@ AllocGlyphCursor(Font source, unsigned sourceChar, Font mask, unsigned maskChar,
         dixInitPrivates(bits, bits + 1, PRIVATE_CURSOR_BITS);
         bits->source = srcbits;
         bits->mask = mskbits;
-#ifdef ARGB_CURSOR
         bits->argb = 0;
-#endif
         bits->width = cm.width;
         bits->height = cm.height;
         bits->xhot = cm.xhot;

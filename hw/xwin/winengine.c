@@ -54,19 +54,8 @@ static HMODULE g_hmodDirectDraw = NULL;
 void
 winDetectSupportedEngines(void)
 {
-    OSVERSIONINFO osvi;
-
     /* Initialize the engine support flags */
     g_dwEnginesSupported = WIN_SERVER_SHADOW_GDI;
-
-#ifdef XWIN_NATIVEGDI
-    g_dwEnginesSupported |= WIN_SERVER_NATIVE_GDI;
-#endif
-
-    /* Get operating system version information */
-    ZeroMemory(&osvi, sizeof(osvi));
-    osvi.dwOSVersionInfoSize = sizeof(osvi);
-    GetVersionEx(&osvi);
 
     /* Do we have DirectDraw? */
     if (g_hmodDirectDraw != NULL) {
@@ -88,21 +77,6 @@ winDetectSupportedEngines(void)
             winErrorFVerb(2,
                           "winDetectSupportedEngines - DirectDraw not installed\n");
             return;
-        }
-        else {
-            /* We have DirectDraw */
-            winErrorFVerb(2,
-                          "winDetectSupportedEngines - DirectDraw installed, allowing ShadowDD\n");
-            g_dwEnginesSupported |= WIN_SERVER_SHADOW_DD;
-
-#ifdef XWIN_PRIMARYFB
-            /* Allow PrimaryDD engine if NT */
-            if (osvi.dwPlatformId == VER_PLATFORM_WIN32_NT) {
-                g_dwEnginesSupported |= WIN_SERVER_PRIMARY_DD;
-                winErrorFVerb(2,
-                              "winDetectSupportedEngines - Windows NT, allowing PrimaryDD\n");
-            }
-#endif
         }
 
         /* Try to query for DirectDraw4 interface */
@@ -176,9 +150,7 @@ winSetEngine(ScreenPtr pScreen)
 #ifdef XWIN_MULTIWINDOWEXTWM
         || pScreenInfo->fMWExtWM
 #endif
-#ifdef XWIN_MULTIWINDOW
         || pScreenInfo->fMultiWindow
-#endif
         ) {
         winErrorFVerb(2,
                       "winSetEngine - Multi Window or Rootless => ShadowGDI\n");
@@ -200,22 +172,9 @@ winSetEngine(ScreenPtr pScreen)
         case WIN_SERVER_SHADOW_GDI:
             winSetEngineFunctionsShadowGDI(pScreen);
             break;
-        case WIN_SERVER_SHADOW_DD:
-            winSetEngineFunctionsShadowDD(pScreen);
-            break;
         case WIN_SERVER_SHADOW_DDNL:
             winSetEngineFunctionsShadowDDNL(pScreen);
             break;
-#ifdef XWIN_PRIMARYFB
-        case WIN_SERVER_PRIMARY_DD:
-            winSetEngineFunctionsPrimaryDD(pScreen);
-            break;
-#endif
-#ifdef XWIN_NATIVEGDI
-        case WIN_SERVER_NATIVE_GDI:
-            winSetEngineFunctionsNativeGDI(pScreen);
-            break;
-#endif
         default:
             FatalError("winSetEngine - Invalid engine type\n");
         }
@@ -232,16 +191,6 @@ winSetEngine(ScreenPtr pScreen)
         return TRUE;
     }
 
-    /* ShadowDD is next in line */
-    if (g_dwEnginesSupported & WIN_SERVER_SHADOW_DD) {
-        winErrorFVerb(2, "winSetEngine - Using Shadow DirectDraw\n");
-        pScreenInfo->dwEngine = WIN_SERVER_SHADOW_DD;
-
-        /* Set engine function pointers */
-        winSetEngineFunctionsShadowDD(pScreen);
-        return TRUE;
-    }
-
     /* ShadowGDI is next in line */
     if (g_dwEnginesSupported & WIN_SERVER_SHADOW_GDI) {
         winErrorFVerb(2, "winSetEngine - Using Shadow GDI DIB\n");
@@ -252,7 +201,7 @@ winSetEngine(ScreenPtr pScreen)
         return TRUE;
     }
 
-    return TRUE;
+    return FALSE;
 }
 
 /*

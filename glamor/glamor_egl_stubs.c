@@ -35,22 +35,26 @@ glamor_egl_screen_init(ScreenPtr screen, struct glamor_context *glamor_ctx)
 {
 }
 
-void
-glamor_egl_destroy_textured_pixmap(PixmapPtr pixmap)
+int
+glamor_egl_fd_name_from_pixmap(ScreenPtr screen,
+                               PixmapPtr pixmap,
+                               CARD16 *stride, CARD32 *size)
 {
+    return -1;
+}
+
+
+int
+glamor_egl_fds_from_pixmap(ScreenPtr screen, PixmapPtr pixmap, int *fds,
+                           uint32_t *offsets, uint32_t *strides,
+                           uint64_t *modifier)
+{
+    return 0;
 }
 
 int
-glamor_egl_dri3_fd_name_from_tex(ScreenPtr screen,
-                                 PixmapPtr pixmap,
-                                 unsigned int tex,
-                                 Bool want_name, CARD16 *stride, CARD32 *size)
+glamor_egl_fd_from_pixmap(ScreenPtr screen, PixmapPtr pixmap,
+                          CARD16 *stride, CARD32 *size)
 {
-    return 0;
-}
-
-unsigned int
-glamor_egl_create_argb8888_based_texture(ScreenPtr screen, int w, int h)
-{
-    return 0;
+    return -1;
 }

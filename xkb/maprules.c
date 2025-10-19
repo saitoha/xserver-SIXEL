@@ -6,19 +6,19 @@
  fee is hereby granted, provided that the above copyright
  notice appear in all copies and that both that copyright
  notice and this permission notice appear in supporting
- documentation, and that the name of Silicon Graphics not be 
- used in advertising or publicity pertaining to distribution 
+ documentation, and that the name of Silicon Graphics not be
+ used in advertising or publicity pertaining to distribution
  of the software without specific prior written permission.
- Silicon Graphics makes no representation about the suitability 
+ Silicon Graphics makes no representation about the suitability
  of this software for any purpose. It is provided "as is"
  without any express or implied warranty.
- 
- SILICON GRAPHICS DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS 
- SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY 
+
+ SILICON GRAPHICS DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS
+ SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
  AND FITNESS FOR A PARTICULAR PURPOSE. IN NO EVENT SHALL SILICON
- GRAPHICS BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL 
- DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, 
- DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE 
+ GRAPHICS BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL
+ DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE,
+ DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE
  OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION  WITH
  THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
@@ -89,11 +89,11 @@ InputLineAddChar(InputLine * line, int ch)
 {
     if (line->num_line >= line->sz_line) {
         if (line->line == line->buf) {
-            line->line = malloc(line->sz_line * 2);
+            line->line = xallocarray(line->sz_line, 2);
             memcpy(line->line, line->buf, line->sz_line);
         }
         else {
-            line->line = realloc((char *) line->line, line->sz_line * 2);
+            line->line = reallocarray(line->line, line->sz_line, 2);
         }
         line->sz_line *= 2;
     }
@@ -578,7 +578,7 @@ static void
 Apply(const char *src, char **dst)
 {
     if (src) {
-        if (*src == '+' || *src == '!') {
+        if (*src == '+' || *src == '|') {
             *dst = _Concat(*dst, src);
         }
         else {
@@ -897,8 +897,8 @@ XkbRF_AddRule(XkbRF_RulesPtr rules)
     }
     else if (rules->num_rules >= rules->sz_rules) {
         rules->sz_rules *= 2;
-        rules->rules = realloc(rules->rules,
-                               rules->sz_rules * sizeof(XkbRF_RuleRec));
+        rules->rules = reallocarray(rules->rules,
+                                    rules->sz_rules, sizeof(XkbRF_RuleRec));
     }
     if (!rules->rules) {
         rules->sz_rules = rules->num_rules = 0;
@@ -919,8 +919,8 @@ XkbRF_AddGroup(XkbRF_RulesPtr rules)
     }
     else if (rules->num_groups >= rules->sz_groups) {
         rules->sz_groups *= 2;
-        rules->groups = realloc(rules->groups,
-                                rules->sz_groups * sizeof(XkbRF_GroupRec));
+        rules->groups = reallocarray(rules->groups,
+                                     rules->sz_groups, sizeof(XkbRF_GroupRec));
     }
     if (!rules->groups) {
         rules->sz_groups = rules->num_groups = 0;

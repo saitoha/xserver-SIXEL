@@ -63,172 +63,34 @@
 /* Video Memory Mapping section 					   */
 /***************************************************************************/
 
-static char *apertureDevName = NULL;
-static int apertureDevFD_ro = -1;
-static int apertureDevFD_rw = -1;
-
-static Bool
-solOpenAperture(void)
-{
-    if (apertureDevName == NULL) {
-        apertureDevName = "/dev/xsvc";
-        if ((apertureDevFD_rw = open(apertureDevName, O_RDWR)) < 0) {
-            xf86MsgVerb(X_WARNING, 0,
-                        "solOpenAperture: failed to open %s (%s)\n",
-                        apertureDevName, strerror(errno));
-            apertureDevName = "/dev/fbs/aperture";
-            apertureDevFD_rw = open(apertureDevName, O_RDWR);
-        }
-        apertureDevFD_ro = open(apertureDevName, O_RDONLY);
-
-        if ((apertureDevFD_rw < 0) || (apertureDevFD_ro < 0)) {
-            xf86MsgVerb(X_WARNING, 0,
-                        "solOpenAperture: failed to open %s (%s)\n",
-                        apertureDevName, strerror(errno));
-            xf86MsgVerb(X_WARNING, 0,
-                        "solOpenAperture: either /dev/fbs/aperture"
-                        " or /dev/xsvc required\n");
-
-            apertureDevName = NULL;
-
-            if (apertureDevFD_rw >= 0) {
-                close(apertureDevFD_rw);
-            }
-            apertureDevFD_rw = -1;
-
-            if (apertureDevFD_ro >= 0) {
-                close(apertureDevFD_ro);
-            }
-            apertureDevFD_ro = -1;
-
-            return FALSE;
-        }
-    }
-    return TRUE;
-}
-
-static void *
-solMapVidMem(int ScreenNum, unsigned long Base, unsigned long Size, int Flags)
-{
-    void *base;
-    int fd;
-    int prot;
-
-    if (Flags & VIDMEM_READONLY) {
-        fd = apertureDevFD_ro;
-        prot = PROT_READ;
-    }
-    else {
-        fd = apertureDevFD_rw;
-        prot = PROT_READ | PROT_WRITE;
-    }
-
-    if (fd < 0) {
-        xf86DrvMsg(ScreenNum, X_ERROR,
-                   "solMapVidMem: failed to open %s (%s)\n",
-                   apertureDevName, strerror(errno));
-        return NULL;
-    }
-
-    base = mmap(NULL, Size, prot, MAP_SHARED, fd, (off_t) Base);
-
-    if (base == MAP_FAILED) {
-        xf86DrvMsg(ScreenNum, X_ERROR,
-                   "solMapVidMem: failed to mmap %s (0x%08lx,0x%lx) (%s)\n",
-                   apertureDevName, Base, Size, strerror(errno));
-        return NULL;
-    }
-
-    return base;
-}
-
-/* ARGSUSED */
-static void
-solUnMapVidMem(int ScreenNum, void *Base, unsigned long Size)
-{
-    if (munmap(Base, Size) != 0) {
-        xf86DrvMsgVerb(ScreenNum, X_WARNING, 0,
-                       "solUnMapVidMem: failed to unmap %s"
-                       " (0x%p,0x%lx) (%s)\n",
-                       apertureDevName, Base, Size, strerror(errno));
-    }
-}
-
 _X_HIDDEN void
 xf86OSInitVidMem(VidMemInfoPtr pVidMem)
 {
-    pVidMem->linearSupported = solOpenAperture();
-    if (pVidMem->linearSupported) {
-        pVidMem->mapMem = solMapVidMem;
-        pVidMem->unmapMem = solUnMapVidMem;
-    }
-    else {
-        xf86MsgVerb(X_WARNING, 0,
-                    "xf86OSInitVidMem: linear memory access disabled\n");
-    }
     pVidMem->initialised = TRUE;
-}
-
-/*
- * Read BIOS via mmap()ing physical memory.
- */
-int
-xf86ReadBIOS(unsigned long Base, unsigned long Offset, unsigned char *Buf,
-             int Len)
-{
-    unsigned char *ptr;
-    int psize;
-    int mlen;
-
-    psize = getpagesize();
-    Offset += Base & (psize - 1);
-    Base &= ~(psize - 1);
-    mlen = (Offset + Len + psize - 1) & ~(psize - 1);
-
-    if (solOpenAperture() == FALSE) {
-        xf86Msg(X_WARNING,
-                "xf86ReadBIOS: Failed to open aperture to read BIOS\n");
-        return -1;
-    }
-
-    ptr = (unsigned char *) mmap(NULL, mlen, PROT_READ,
-                                 MAP_SHARED, apertureDevFD_ro, (off_t) Base);
-    if (ptr == MAP_FAILED) {
-        xf86Msg(X_WARNING, "xf86ReadBIOS: %s mmap failed [0x%08lx, 0x%04x]\n",
-                apertureDevName, Base, mlen);
-        return -1;
-    }
-
-    (void) memcpy(Buf, (void *) (ptr + Offset), Len);
-    if (munmap((caddr_t) ptr, mlen) != 0) {
-        xf86MsgVerb(X_WARNING, 0,
-                    "xf86ReadBIOS: failed to unmap %s (0x%p,0x%x) (%s)\n",
-                    apertureDevName, ptr, mlen, strerror(errno));
-    }
-
-    return Len;
 }
 
 /***************************************************************************/
 /* I/O Permissions section						   */
 /***************************************************************************/
 
-#if defined(__i386__) || defined(__i386) || defined(__x86)
-static Bool ExtendedEnabled = FALSE;
-#endif
+void
+xf86OSInputThreadInit(void)
+{
+    /*
+     * Need to enable in input thread as well, as Solaris kernel tracks
+     * IOPL per-thread and doesn't inherit when creating a new thread.
+     */
+    xf86EnableIO();
+}
 
 Bool
 xf86EnableIO(void)
 {
 #if defined(__i386__) || defined(__i386) || defined(__x86)
-    if (ExtendedEnabled)
-        return TRUE;
-
     if (sysi86(SI86V86, V86SC_IOPL, PS_IOPL) < 0) {
         xf86Msg(X_WARNING, "xf86EnableIOPorts: Failed to set IOPL for I/O\n");
         return FALSE;
     }
-    ExtendedEnabled = TRUE;
 #endif                          /* i386 */
     return TRUE;
 }
@@ -237,11 +99,6 @@ void
 xf86DisableIO(void)
 {
 #if defined(__i386__) || defined(__i386) || defined(__x86)
-    if (!ExtendedEnabled)
-        return;
-
     sysi86(SI86V86, V86SC_IOPL, 0);
-
-    ExtendedEnabled = FALSE;
 #endif                          /* i386 */
 }

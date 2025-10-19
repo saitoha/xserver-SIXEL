@@ -34,10 +34,10 @@
 #undef XF86CONFIGFILE
 
 /* Path to configuration file. */
-#undef __XCONFIGFILE__
+#undef XCONFIGFILE
 
 /* Name of configuration directory. */
-#undef __XCONFIGDIR__
+#undef XCONFIGDIR
 
 /* Path to loadable modules. */
 #undef DEFAULT_MODULE_PATH
@@ -82,12 +82,6 @@
 /* Building vgahw module */
 #undef WITH_VGAHW
 
-/* Define to 1 if NetBSD built-in MTRR support is available */
-#undef HAS_MTRR_BUILTIN
-
-/* Define to 1 if BSD MTRR support is available */
-#undef HAS_MTRR_SUPPORT
-
 /* NetBSD PIO alpha IO */
 #undef USE_ALPHA_PIO
 
@@ -130,11 +124,11 @@
 /* Define to 1 if you have the <sys/mkdev.h> header file. */
 #undef HAVE_SYS_MKDEV_H
 
+/* Define to 1 if you have the <sys/sysmacros.h> header file. */
+#undef HAVE_SYS_SYSMACROS_H
+
 /* Path to text files containing PCI IDs */
 #undef PCI_TXT_IDS_PATH
-
-/* Use SIGIO handlers for input device events by default */
-#undef USE_SIGIO_BY_DEFAULT
 
 /* Build with libdrm support */
 #undef WITH_LIBDRM
@@ -156,5 +150,8 @@
 
 /* Support APM/ACPI power management in the server */
 #undef XF86PM
+
+/* Fallback input driver if the assigned driver fails */
+#undef FALLBACK_INPUT_DRIVER
 
 #endif /* _XORG_CONFIG_H_ */

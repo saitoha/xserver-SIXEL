@@ -1,17 +1,17 @@
-/* 
- * 
+/*
+ *
  * Copyright (c) 1997  Metro Link Incorporated
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"), 
+ * copy of this software and associated documentation files (the "Software"),
  * to deal in the Software without restriction, including without limitation
  * the rights to use, copy, modify, merge, publish, distribute, sublicense,
  * and/or sell copies of the Software, and to permit persons to whom the
  * Software is furnished to do so, subject to the following conditions:
- * 
+ *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
@@ -19,11 +19,11 @@
  * WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF
  * OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
- * 
+ *
  * Except as contained in this notice, the name of the Metro Link shall not be
  * used in advertising or otherwise to promote the sale, use or other dealings
  * in this Software without prior written authorization from Metro Link.
- * 
+ *
  */
 /*
  * Copyright (c) 1997-2003 by The XFree86 Project, Inc.
@@ -61,12 +61,28 @@
 #include "Configint.h"
 
 
-static xf86ConfigSymTabRec VendorSubTab[] = {
+static const xf86ConfigSymTabRec VendorSubTab[] = {
     {ENDSUBSECTION, "endsubsection"},
     {IDENTIFIER, "identifier"},
     {OPTION, "option"},
     {-1, ""},
 };
+
+static void
+xf86freeVendorSubList(XF86ConfVendSubPtr ptr)
+{
+    XF86ConfVendSubPtr prev;
+
+    while (ptr) {
+        TestFree(ptr->vs_identifier);
+        TestFree(ptr->vs_name);
+        TestFree(ptr->vs_comment);
+        xf86optionListFree(ptr->vs_option_lst);
+        prev = ptr;
+        ptr = ptr->list.next;
+        free(prev);
+    }
+}
 
 #define CLEANUP xf86freeVendorSubList
 
@@ -113,7 +129,7 @@ xf86parseVendorSubSection(void)
 
 #undef CLEANUP
 
-static xf86ConfigSymTabRec VendorTab[] = {
+static const xf86ConfigSymTabRec VendorTab[] = {
     {ENDSECTION, "endsection"},
     {IDENTIFIER, "identifier"},
     {OPTION, "option"},
@@ -214,20 +230,4 @@ xf86freeVendorList(XF86ConfVendorPtr p)
     TestFree(p->vnd_comment);
     xf86optionListFree(p->vnd_option_lst);
     free(p);
-}
-
-void
-xf86freeVendorSubList(XF86ConfVendSubPtr ptr)
-{
-    XF86ConfVendSubPtr prev;
-
-    while (ptr) {
-        TestFree(ptr->vs_identifier);
-        TestFree(ptr->vs_name);
-        TestFree(ptr->vs_comment);
-        xf86optionListFree(ptr->vs_option_lst);
-        prev = ptr;
-        ptr = ptr->list.next;
-        free(prev);
-    }
 }

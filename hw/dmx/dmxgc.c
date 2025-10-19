@@ -49,7 +49,7 @@
 #include "pixmapstr.h"
 #include "migc.h"
 
-static GCFuncs dmxGCFuncs = {
+static const GCFuncs dmxGCFuncs = {
     dmxValidateGC,
     dmxChangeGC,
     dmxCopyGC,
@@ -59,7 +59,7 @@ static GCFuncs dmxGCFuncs = {
     dmxCopyClip,
 };
 
-static GCOps dmxGCOps = {
+static const GCOps dmxGCOps = {
     dmxFillSpans,
     dmxSetSpans,
     dmxPutImage,
@@ -391,16 +391,13 @@ dmxChangeClip(GCPtr pGC, int type, void *pvalue, int nrects)
     pGC->funcs->ChangeClip(pGC, type, pvalue, nrects);
 
     /* Set the client clip on the back-end server */
-    switch (pGC->clientClipType) {
-    case CT_NONE:
+    if (!pGC->clientClip) {
         if (dmxScreen->beDisplay)
             XSetClipMask(dmxScreen->beDisplay, pGCPriv->gc, None);
-        break;
-
-    case CT_REGION:
+    } else {
         if (dmxScreen->beDisplay) {
             nRects = RegionNumRects((RegionPtr) pGC->clientClip);
-            pRects = malloc(nRects * sizeof(*pRects));
+            pRects = xallocarray(nRects, sizeof(*pRects));
             pBox = RegionRects((RegionPtr) pGC->clientClip);
 
             for (i = 0; i < nRects; i++) {
@@ -416,11 +413,6 @@ dmxChangeClip(GCPtr pGC, int type, void *pvalue, int nrects)
 
             free(pRects);
         }
-        break;
-
-    case CT_PIXMAP:
-        /* Condensed down to REGION in the mi code */
-        break;
     }
 
     DMX_GC_FUNC_EPILOGUE(pGC);

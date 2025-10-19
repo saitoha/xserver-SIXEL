@@ -46,7 +46,8 @@ glamor_poly_point_gl(DrawablePtr drawable, GCPtr gc, int mode, int npt, DDXPoint
     int off_x, off_y;
     GLshort *vbo_ppt;
     char *vbo_offset;
-    int box_x, box_y;
+    int box_index;
+    Bool ret = FALSE;
 
     pixmap_priv = glamor_get_pixmap_private(pixmap);
     if (!GLAMOR_PIXMAP_PRIV_HAS_FBO(pixmap_priv))
@@ -55,17 +56,18 @@ glamor_poly_point_gl(DrawablePtr drawable, GCPtr gc, int mode, int npt, DDXPoint
     glamor_make_current(glamor_priv);
 
     if (prog->failed)
-        goto bail_ctx;
+        goto bail;
 
     if (!prog->prog) {
         if (!glamor_build_program(screen, prog,
                                   &glamor_facet_point,
-                                  &glamor_fill_solid))
-            goto bail_ctx;
+                                  &glamor_fill_solid,
+                                  NULL, NULL))
+            goto bail;
     }
 
     if (!glamor_use_program(pixmap, gc, prog, NULL))
-        goto bail_ctx;
+        goto bail;
 
     vbo_ppt = glamor_get_vbo_space(screen, npt * (2 * sizeof (INT16)), &vbo_offset);
     glEnableVertexAttribArray(GLAMOR_VERTEX_POS);
@@ -85,11 +87,13 @@ glamor_poly_point_gl(DrawablePtr drawable, GCPtr gc, int mode, int npt, DDXPoint
 
     glEnable(GL_SCISSOR_TEST);
 
-    glamor_pixmap_loop(pixmap_priv, box_x, box_y) {
+    glamor_pixmap_loop(pixmap_priv, box_index) {
         int nbox = RegionNumRects(gc->pCompositeClip);
         BoxPtr box = RegionRects(gc->pCompositeClip);
 
-        glamor_set_destination_drawable(drawable, box_x, box_y, TRUE, TRUE, prog->matrix_uniform, &off_x, &off_y);
+        if (!glamor_set_destination_drawable(drawable, box_index, TRUE, TRUE,
+                                             prog->matrix_uniform, &off_x, &off_y))
+            goto bail;
 
         while (nbox--) {
             glScissor(box->x1 + off_x,
@@ -101,16 +105,13 @@ glamor_poly_point_gl(DrawablePtr drawable, GCPtr gc, int mode, int npt, DDXPoint
         }
     }
 
+    ret = TRUE;
+
+bail:
     glDisable(GL_SCISSOR_TEST);
-    glDisable(GL_COLOR_LOGIC_OP);
     glDisableVertexAttribArray(GLAMOR_VERTEX_POS);
 
-    return TRUE;
-
-bail_ctx:
-    glDisable(GL_COLOR_LOGIC_OP);
-bail:
-    return FALSE;
+    return ret;
 }
 
 void
@@ -121,18 +122,3 @@ glamor_poly_point(DrawablePtr drawable, GCPtr gc, int mode, int npt,
         return;
     miPolyPoint(drawable, gc, mode, npt, ppt);
 }
-
-Bool
-glamor_poly_point_nf(DrawablePtr drawable, GCPtr gc, int mode, int npt,
-                     DDXPointPtr ppt)
-{
-    if (glamor_poly_point_gl(drawable, gc, mode, npt, ppt))
-        return TRUE;
-
-    if (glamor_ddx_fallback_check_pixmap(drawable) && glamor_ddx_fallback_check_gc(gc))
-        return FALSE;
-
-    miPolyPoint(drawable, gc, mode, npt, ppt);
-    return TRUE;
-}
-

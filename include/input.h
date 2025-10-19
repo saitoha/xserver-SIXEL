@@ -26,13 +26,13 @@ Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
 
                         All Rights Reserved
 
-Permission to use, copy, modify, and distribute this software and its 
-documentation for any purpose and without fee is hereby granted, 
+Permission to use, copy, modify, and distribute this software and its
+documentation for any purpose and without fee is hereby granted,
 provided that the above copyright notice appear in all copies and that
-both that copyright notice and this permission notice appear in 
+both that copyright notice and this permission notice appear in
 supporting documentation, and that the name of Digital not be
 used in advertising or publicity pertaining to distribution of the
-software without specific, written prior permission.  
+software without specific, written prior permission.
 
 DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
 ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
@@ -56,6 +56,7 @@ SOFTWARE.
 #include "xkbrules.h"
 #include "events.h"
 #include "list.h"
+#include "os.h"
 #include <X11/extensions/XI2.h>
 
 #define DEVICE_INIT	0
@@ -236,6 +237,8 @@ typedef struct _InputAttributes {
 #define ATTR_TABLET (1<<3)
 #define ATTR_TOUCHPAD (1<<4)
 #define ATTR_TOUCHSCREEN (1<<5)
+#define ATTR_KEY (1<<6)
+#define ATTR_TABLET_PAD (1<<7)
 
 /* Key/Button has been run through all input processing and events sent to clients. */
 #define KEY_PROCESSED 1
@@ -286,9 +289,6 @@ extern _X_EXPORT int dixLookupDevice(DeviceIntPtr * /* dev */ ,
 
 extern _X_EXPORT void QueryMinMaxKeyCodes(KeyCode * /*minCode */ ,
                                           KeyCode * /*maxCode */ );
-
-extern _X_EXPORT Bool SetKeySymsMap(KeySymsPtr /*dst */ ,
-                                    KeySymsPtr /*src */ );
 
 extern _X_EXPORT Bool InitButtonClassDeviceStruct(DeviceIntPtr /*device */ ,
                                                   int /*numButtons */ ,
@@ -451,12 +451,11 @@ extern _X_EXPORT void QueuePointerEvents(DeviceIntPtr pDev,
 extern _X_EXPORT int GetKeyboardEvents(InternalEvent *events,
                                        DeviceIntPtr pDev,
                                        int type,
-                                       int key_code, const ValuatorMask *mask);
+                                       int key_code);
 
 extern _X_EXPORT void QueueKeyboardEvents(DeviceIntPtr pDev,
                                           int type,
-                                          int key_code,
-                                          const ValuatorMask *mask);
+                                          int key_code);
 
 extern int GetTouchEvents(InternalEvent *events,
                           DeviceIntPtr pDev,
@@ -508,7 +507,7 @@ extern int AttachDevice(ClientPtr client,
                         DeviceIntPtr slave, DeviceIntPtr master);
 
 extern _X_EXPORT DeviceIntPtr GetPairedDevice(DeviceIntPtr kbd);
-extern DeviceIntPtr GetMaster(DeviceIntPtr dev, int type);
+extern _X_EXPORT DeviceIntPtr GetMaster(DeviceIntPtr dev, int type);
 
 extern _X_EXPORT int AllocDevicePair(ClientPtr client,
                                      const char *name,
@@ -636,6 +635,7 @@ extern _X_EXPORT int NewInputDeviceRequest(InputOption *options,
                                            InputAttributes * attrs,
                                            DeviceIntPtr *dev);
 extern _X_EXPORT void DeleteInputDeviceRequest(DeviceIntPtr dev);
+extern _X_EXPORT void RemoveInputDeviceTraces(const char *config_info);
 
 extern _X_EXPORT void DDXRingBell(int volume, int pitch, int duration);
 
@@ -676,6 +676,24 @@ extern _X_EXPORT Bool valuator_mask_fetch(const ValuatorMask *mask,
                                           int valnum, int *val);
 extern _X_EXPORT Bool valuator_mask_fetch_double(const ValuatorMask *mask,
                                                  int valnum, double *val);
+extern _X_EXPORT Bool valuator_mask_has_unaccelerated(const ValuatorMask *mask);
+extern _X_EXPORT void valuator_mask_set_unaccelerated(ValuatorMask *mask,
+                                                      int valuator,
+                                                      double accel,
+                                                      double unaccel);
+extern _X_EXPORT void valuator_mask_set_absolute_unaccelerated(ValuatorMask *mask,
+                                                               int valuator,
+                                                               int absolute,
+                                                               double unaccel);
+extern _X_EXPORT double valuator_mask_get_accelerated(const ValuatorMask *mask,
+                                                      int valuator);
+extern _X_EXPORT double valuator_mask_get_unaccelerated(const ValuatorMask *mask,
+                                                        int valuator);
+extern _X_EXPORT Bool valuator_mask_fetch_unaccelerated(const ValuatorMask *mask,
+                                                        int valuator,
+                                                        double *accel,
+                                                        double *unaccel);
+extern _X_HIDDEN void valuator_mask_drop_unaccelerated(ValuatorMask *mask);
 
 /* InputOption handling interface */
 extern _X_EXPORT InputOption *input_option_new(InputOption *list,
@@ -700,5 +718,22 @@ extern _X_HIDDEN void input_constrain_cursor(DeviceIntPtr pDev, ScreenPtr screen
                                              int dest_x, int dest_y,
                                              int *out_x, int *out_y,
                                              int *nevents, InternalEvent* events);
+
+extern _X_EXPORT void input_lock(void);
+extern _X_EXPORT void input_unlock(void);
+extern _X_EXPORT void input_force_unlock(void);
+extern _X_EXPORT int in_input_thread(void);
+
+extern void InputThreadPreInit(void);
+extern void InputThreadInit(void);
+extern void InputThreadFini(void);
+
+extern int InputThreadRegisterDev(int fd,
+                                  NotifyFdProcPtr readInputProc,
+                                  void *readInputArgs);
+
+extern int InputThreadUnregisterDev(int fd);
+
+extern _X_EXPORT Bool InputThreadEnable;
 
 #endif                          /* INPUT_H */

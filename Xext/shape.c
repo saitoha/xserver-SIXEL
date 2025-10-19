@@ -881,6 +881,7 @@ SendShapeNotify(WindowPtr pWin, int which)
     default:
         return;
     }
+    UpdateCurrentTimeIf();
     for (pShapeEvent = *pHead; pShapeEvent; pShapeEvent = pShapeEvent->next) {
         xShapeNotifyEvent se = {
             .type = ShapeNotify + ShapeEventBase,
@@ -996,7 +997,7 @@ ProcShapeGetRectangles(ClientPtr client)
 
         nrects = RegionNumRects(region);
         box = RegionRects(region);
-        rects = malloc(nrects * sizeof(xRectangle));
+        rects = xallocarray(nrects, sizeof(xRectangle));
         if (!rects && nrects)
             return BadAlloc;
         for (i = 0; i < nrects; i++, box++) {
@@ -1073,7 +1074,7 @@ ProcShapeDispatch(ClientPtr client)
     }
 }
 
-static void
+static void _X_COLD
 SShapeNotifyEvent(xShapeNotifyEvent * from, xShapeNotifyEvent * to)
 {
     to->type = from->type;
@@ -1088,7 +1089,7 @@ SShapeNotifyEvent(xShapeNotifyEvent * from, xShapeNotifyEvent * to)
     to->shaped = from->shaped;
 }
 
-static int
+static int _X_COLD
 SProcShapeQueryVersion(ClientPtr client)
 {
     REQUEST(xShapeQueryVersionReq);
@@ -1097,7 +1098,7 @@ SProcShapeQueryVersion(ClientPtr client)
     return ProcShapeQueryVersion(client);
 }
 
-static int
+static int _X_COLD
 SProcShapeRectangles(ClientPtr client)
 {
     REQUEST(xShapeRectanglesReq);
@@ -1111,7 +1112,7 @@ SProcShapeRectangles(ClientPtr client)
     return ProcShapeRectangles(client);
 }
 
-static int
+static int _X_COLD
 SProcShapeMask(ClientPtr client)
 {
     REQUEST(xShapeMaskReq);
@@ -1125,7 +1126,7 @@ SProcShapeMask(ClientPtr client)
     return ProcShapeMask(client);
 }
 
-static int
+static int _X_COLD
 SProcShapeCombine(ClientPtr client)
 {
     REQUEST(xShapeCombineReq);
@@ -1139,7 +1140,7 @@ SProcShapeCombine(ClientPtr client)
     return ProcShapeCombine(client);
 }
 
-static int
+static int _X_COLD
 SProcShapeOffset(ClientPtr client)
 {
     REQUEST(xShapeOffsetReq);
@@ -1152,7 +1153,7 @@ SProcShapeOffset(ClientPtr client)
     return ProcShapeOffset(client);
 }
 
-static int
+static int _X_COLD
 SProcShapeQueryExtents(ClientPtr client)
 {
     REQUEST(xShapeQueryExtentsReq);
@@ -1163,7 +1164,7 @@ SProcShapeQueryExtents(ClientPtr client)
     return ProcShapeQueryExtents(client);
 }
 
-static int
+static int _X_COLD
 SProcShapeSelectInput(ClientPtr client)
 {
     REQUEST(xShapeSelectInputReq);
@@ -1174,7 +1175,7 @@ SProcShapeSelectInput(ClientPtr client)
     return ProcShapeSelectInput(client);
 }
 
-static int
+static int _X_COLD
 SProcShapeInputSelected(ClientPtr client)
 {
     REQUEST(xShapeInputSelectedReq);
@@ -1185,7 +1186,7 @@ SProcShapeInputSelected(ClientPtr client)
     return ProcShapeInputSelected(client);
 }
 
-static int
+static int _X_COLD
 SProcShapeGetRectangles(ClientPtr client)
 {
     REQUEST(xShapeGetRectanglesReq);
@@ -1195,7 +1196,7 @@ SProcShapeGetRectangles(ClientPtr client)
     return ProcShapeGetRectangles(client);
 }
 
-static int
+static int _X_COLD
 SProcShapeDispatch(ClientPtr client)
 {
     REQUEST(xReq);

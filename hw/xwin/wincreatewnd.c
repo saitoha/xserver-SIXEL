@@ -110,20 +110,8 @@ winCreateBoundingWindowFullScreen(ScreenPtr pScreen)
                              GetModuleHandle(NULL),     /* Instance handle */
                              pScreenPriv);      /* ScreenPrivates */
 
-    /* Branch on the server engine */
-    switch (pScreenInfo->dwEngine) {
-#ifdef XWIN_NATIVEGDI
-    case WIN_SERVER_SHADOW_GDI:
-        /* Show the window */
-        ShowWindow(*phwnd, SW_SHOWMAXIMIZED);
-        break;
-#endif
-
-    default:
-        /* Hide the window */
-        ShowWindow(*phwnd, SW_SHOWNORMAL);
-        break;
-    }
+    /* Hide the window */
+    ShowWindow(*phwnd, SW_SHOWNORMAL);
 
     /* Send first paint message */
     UpdateWindow(*phwnd);
@@ -168,12 +156,10 @@ winCreateBoundingWindowWindowed(ScreenPtr pScreen)
         && !pScreenInfo->fMWExtWM
 #endif
         && !pScreenInfo->fRootless
-#ifdef XWIN_MULTIWINDOW
         && !pScreenInfo->fMultiWindow
-#endif
         ) {
-        /* Try to handle startup via run.exe. run.exe instructs Windows to 
-         * hide all created windows. Detect this case and make sure the 
+        /* Try to handle startup via run.exe. run.exe instructs Windows to
+         * hide all created windows. Detect this case and make sure the
          * window is shown nevertheless */
         STARTUPINFO startupInfo;
 
@@ -183,7 +169,7 @@ winCreateBoundingWindowWindowed(ScreenPtr pScreen)
             fForceShowWindow = TRUE;
         }
         dwWindowStyle |= WS_CAPTION;
-        if (pScreenInfo->iResizeMode != notAllowed)
+        if (pScreenInfo->iResizeMode != resizeNotAllowed)
             dwWindowStyle |= WS_THICKFRAME | WS_MAXIMIZEBOX;
     }
     else
@@ -232,13 +218,11 @@ winCreateBoundingWindowWindowed(ScreenPtr pScreen)
          || pScreenInfo->fMWExtWM
 #endif
          || pScreenInfo->fRootless
-#ifdef XWIN_MULTIWINDOW
          || pScreenInfo->fMultiWindow
-#endif
         )
         && (pScreenInfo->iResizeMode == resizeWithScrollbars)) {
         /* We cannot have scrollbars if we do not have a window border */
-        pScreenInfo->iResizeMode = notAllowed;
+        pScreenInfo->iResizeMode = resizeNotAllowed;
     }
 
     /* Did the user specify a height and width? */
@@ -255,9 +239,7 @@ winCreateBoundingWindowWindowed(ScreenPtr pScreen)
             && !pScreenInfo->fMWExtWM
 #endif
             && !pScreenInfo->fRootless
-#ifdef XWIN_MULTIWINDOW
             && !pScreenInfo->fMultiWindow
-#endif
             ) {
 #if CYGDEBUG
             winDebug
@@ -265,7 +247,7 @@ winCreateBoundingWindowWindowed(ScreenPtr pScreen)
 #endif
 
             /* Are we resizable */
-            if (pScreenInfo->iResizeMode != notAllowed) {
+            if (pScreenInfo->iResizeMode != resizeNotAllowed) {
 #if CYGDEBUG
                 winDebug
                     ("winCreateBoundingWindowWindowed - Window is resizable\n");
@@ -305,9 +287,7 @@ winCreateBoundingWindowWindowed(ScreenPtr pScreen)
 #ifdef XWIN_MULTIWINDOWEXTWM
         && !pScreenInfo->fMWExtWM
 #endif
-#ifdef XWIN_MULTIWINDOW
         && !pScreenInfo->fMultiWindow
-#endif
         ) {
         /* Trim window width to fit work area */
         if (iWidth > (rcWorkArea.right - rcWorkArea.left))
@@ -369,10 +349,11 @@ winCreateBoundingWindowWindowed(ScreenPtr pScreen)
     }
 
     winDebug("winCreateBoundingWindowWindowed - WindowClient "
-             "w %ld h %ld r %ld l %ld b %ld t %ld\n",
-             rcClient.right - rcClient.left,
-             rcClient.bottom - rcClient.top,
-             rcClient.right, rcClient.left, rcClient.bottom, rcClient.top);
+             "w %d  h %d r %d l %d b %d t %d\n",
+             (int)(rcClient.right - rcClient.left),
+             (int)(rcClient.bottom - rcClient.top),
+             (int)rcClient.right, (int)rcClient.left,
+             (int)rcClient.bottom, (int)rcClient.top);
 
     /* We adjust the visual size if the user did not specify it */
     if (!
@@ -441,13 +422,9 @@ winCreateBoundingWindowWindowed(ScreenPtr pScreen)
 #ifdef XWIN_MULTIWINDOWEXTWM
         || pScreenInfo->fMWExtWM
 #endif
-#ifdef XWIN_MULTIWINDOW
         || pScreenInfo->fMultiWindow
-#endif
         ) {
-#if defined(XWIN_MULTIWINDOW) || defined(XWIN_MULTIWINDOWEXTWM)
         pScreenPriv->fRootWindowShown = FALSE;
-#endif
         ShowWindow(*phwnd, SW_HIDE);
     }
     else
@@ -463,9 +440,7 @@ winCreateBoundingWindowWindowed(ScreenPtr pScreen)
         && !pScreenInfo->fMWExtWM
 #endif
         && !pScreenInfo->fRootless
-#ifdef XWIN_MULTIWINDOW
         && !pScreenInfo->fMultiWindow
-#endif
         ) {
         if (!BringWindowToTop(*phwnd)) {
             ErrorF("winCreateBoundingWindowWindowed - BringWindowToTop () "
@@ -473,12 +448,6 @@ winCreateBoundingWindowWindowed(ScreenPtr pScreen)
             return FALSE;
         }
     }
-
-#ifdef XWIN_NATIVEGDI
-    /* Paint window background blue */
-    if (pScreenInfo->dwEngine == WIN_SERVER_NATIVE_GDI)
-        winPaintBackground(*phwnd, RGB(0x00, 0x00, 0xFF));
-#endif
 
     winDebug("winCreateBoundingWindowWindowed -  Returning\n");
 

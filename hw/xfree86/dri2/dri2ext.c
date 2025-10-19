@@ -269,7 +269,12 @@ ProcDRI2GetBuffers(ClientPtr client)
     int status, width, height, count;
     unsigned int *attachments;
 
-    REQUEST_FIXED_SIZE(xDRI2GetBuffersReq, stuff->count * 4);
+    REQUEST_AT_LEAST_SIZE(xDRI2GetBuffersReq);
+    /* stuff->count is a count of CARD32 attachments that follows */
+    if (stuff->count > (INT_MAX / sizeof(CARD32)))
+        return BadLength;
+    REQUEST_FIXED_SIZE(xDRI2GetBuffersReq, stuff->count * sizeof(CARD32));
+
     if (!validDrawable(client, stuff->drawable, DixReadAccess | DixWriteAccess,
                        &pDrawable, &status))
         return status;
@@ -294,7 +299,13 @@ ProcDRI2GetBuffersWithFormat(ClientPtr client)
     int status, width, height, count;
     unsigned int *attachments;
 
-    REQUEST_FIXED_SIZE(xDRI2GetBuffersReq, stuff->count * (2 * 4));
+    REQUEST_AT_LEAST_SIZE(xDRI2GetBuffersReq);
+    /* stuff->count is a count of pairs of CARD32s (attachments & formats)
+       that follows */
+    if (stuff->count > (INT_MAX / (2 * sizeof(CARD32))))
+        return BadLength;
+    REQUEST_FIXED_SIZE(xDRI2GetBuffersReq,
+                       stuff->count * (2 * sizeof(CARD32)));
     if (!validDrawable(client, stuff->drawable, DixReadAccess | DixWriteAccess,
                        &pDrawable, &status))
         return status;
@@ -623,7 +634,7 @@ ProcDRI2Dispatch(ClientPtr client)
     }
 }
 
-static int
+static int _X_COLD
 SProcDRI2Connect(ClientPtr client)
 {
     REQUEST(xDRI2ConnectReq);
@@ -648,7 +659,7 @@ SProcDRI2Connect(ClientPtr client)
     return Success;
 }
 
-static int
+static int _X_COLD
 SProcDRI2Dispatch(ClientPtr client)
 {
     REQUEST(xReq);

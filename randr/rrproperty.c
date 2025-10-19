@@ -23,6 +23,7 @@
 #include "randrstr.h"
 #include "propertyst.h"
 #include "swaprep.h"
+#include <X11/Xatom.h>
 
 static int
 DeliverPropertyEvent(WindowPtr pWin, void *value)
@@ -132,15 +133,37 @@ RRDeleteOutputProperty(RROutputPtr output, Atom property)
         }
 }
 
+static void
+RRNoticePropertyChange(RROutputPtr output, Atom property, RRPropertyValuePtr value)
+{
+    const char *non_desktop_str = RR_PROPERTY_NON_DESKTOP;
+    Atom non_desktop_prop = MakeAtom(non_desktop_str, strlen(non_desktop_str), FALSE);
+
+    if (property == non_desktop_prop) {
+        if (value->type == XA_INTEGER && value->format == 32 && value->size >= 1) {
+            uint32_t     nonDesktopData;
+            Bool        nonDesktop;
+
+            memcpy(&nonDesktopData, value->data, sizeof (nonDesktopData));
+            nonDesktop = nonDesktopData != 0;
+
+            if (nonDesktop != output->nonDesktop) {
+                output->nonDesktop = nonDesktop;
+                RROutputChanged(output, 0);
+                RRTellChanged(output->pScreen);
+            }
+        }
+    }
+}
+
 int
 RRChangeOutputProperty(RROutputPtr output, Atom property, Atom type,
                        int format, int mode, unsigned long len,
-                       void *value, Bool sendevent, Bool pending)
+                       const void *value, Bool sendevent, Bool pending)
 {
     RRPropertyPtr prop;
     rrScrPrivPtr pScrPriv = rrGetScrPriv(output->pScreen);
     int size_in_bytes;
-    int total_size;
     unsigned long total_len;
     RRPropertyValuePtr prop_value;
     RRPropertyValueRec new_value;
@@ -180,9 +203,8 @@ RRChangeOutputProperty(RROutputPtr output, Atom property, Atom type,
     if (mode == PropModeReplace || len > 0) {
         void *new_data = NULL, *old_data = NULL;
 
-        total_size = total_len * size_in_bytes;
-        new_value.data = (void *) malloc(total_size);
-        if (!new_value.data && total_size) {
+        new_value.data = xallocarray(total_len, size_in_bytes);
+        if (!new_value.data && total_len && size_in_bytes) {
             if (add)
                 RRDestroyOutputProperty(prop);
             return BadAlloc;
@@ -236,6 +258,9 @@ RRChangeOutputProperty(RROutputPtr output, Atom property, Atom type,
 
     if (pending && prop->is_pending)
         output->pendingProperties = TRUE;
+
+    if (!(pending && prop->is_pending))
+        RRNoticePropertyChange(output, prop->propertyName, prop_value);
 
     if (sendevent) {
         xRROutputPropertyNotifyEvent event = {
@@ -326,7 +351,7 @@ RRGetOutputProperty(RROutputPtr output, Atom property, Bool pending)
 int
 RRConfigureOutputProperty(RROutputPtr output, Atom property,
                           Bool pending, Bool range, Bool immutable,
-                          int num_values, INT32 *values)
+                          int num_values, const INT32 *values)
 {
     RRPropertyPtr prop = RRQueryOutputProperty(output, property);
     Bool add = FALSE;
@@ -350,7 +375,7 @@ RRConfigureOutputProperty(RROutputPtr output, Atom property,
         return BadMatch;
     }
 
-    new_values = malloc(num_values * sizeof(INT32));
+    new_values = xallocarray(num_values, sizeof(INT32));
     if (!new_values && num_values) {
         if (add)
             RRDestroyOutputProperty(prop);
@@ -400,7 +425,7 @@ ProcRRListOutputProperties(ClientPtr client)
     for (prop = output->properties; prop; prop = prop->next)
         numProps++;
     if (numProps)
-        if (!(pAtoms = (Atom *) malloc(numProps * sizeof(Atom))))
+        if (!(pAtoms = xallocarray(numProps, sizeof(Atom))))
             return BadAlloc;
 
     rep = (xRRListOutputPropertiesReply) {
@@ -447,7 +472,7 @@ ProcRRQueryOutputProperty(ClientPtr client)
         return BadName;
 
     if (prop->num_valid) {
-        extra = malloc(prop->num_valid * sizeof(INT32));
+        extra = xallocarray(prop->num_valid, sizeof(INT32));
         if (!extra)
             return BadAlloc;
     }
@@ -486,6 +511,9 @@ ProcRRConfigureOutputProperty(ClientPtr client)
     REQUEST_AT_LEAST_SIZE(xRRConfigureOutputPropertyReq);
 
     VERIFY_RR_OUTPUT(stuff->output, output, DixReadAccess);
+
+    if (RROutputIsLeased(output))
+        return BadAccess;
 
     num_valid =
         stuff->length - bytes_to_int32(sizeof(xRRConfigureOutputPropertyReq));
@@ -556,6 +584,9 @@ ProcRRDeleteOutputProperty(ClientPtr client)
     REQUEST_SIZE_MATCH(xRRDeleteOutputPropertyReq);
     UpdateCurrentTime();
     VERIFY_RR_OUTPUT(stuff->output, output, DixReadAccess);
+
+    if (RROutputIsLeased(output))
+        return BadAccess;
 
     if (!ValidAtom(stuff->property)) {
         client->errorValue = stuff->property;

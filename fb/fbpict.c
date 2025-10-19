@@ -82,7 +82,7 @@ fbDestroyGlyphCache(void)
     }
 }
 
-void
+static void
 fbUnrealizeGlyph(ScreenPtr pScreen,
 		 GlyphPtr pGlyph)
 {
@@ -113,7 +113,7 @@ fbGlyphs(CARD8 op,
     int xDst = list->xOff, yDst = list->yOff;
 
     miCompositeSourceValidate(pSrc);
-    
+
     n_glyphs = 0;
     for (i = 0; i < nlist; ++i)
 	n_glyphs += list[i].len;
@@ -122,12 +122,12 @@ fbGlyphs(CARD8 op,
 	glyphCache = pixman_glyph_cache_create();
 
     pixman_glyph_cache_freeze (glyphCache);
-    
+
     if (n_glyphs > N_STACK_GLYPHS) {
-	if (!(pglyphs = malloc (n_glyphs * sizeof (pixman_glyph_t))))
+	if (!(pglyphs = xallocarray(n_glyphs, sizeof(pixman_glyph_t))))
 	    goto out;
     }
-    
+
     i = 0;
     x = y = 0;
     while (nlist--) {
@@ -220,20 +220,10 @@ static pixman_image_t *
 create_solid_fill_image(PicturePtr pict)
 {
     PictSolidFill *solid = &pict->pSourcePict->solidFill;
-    pixman_color_t color;
-    CARD32 a, r, g, b;
+    /* pixman_color_t and xRenderColor have the same layout */
+    pixman_color_t *color = (pixman_color_t *)&solid->fullcolor;
 
-    a = (solid->color & 0xff000000) >> 24;
-    r = (solid->color & 0x00ff0000) >> 16;
-    g = (solid->color & 0x0000ff00) >> 8;
-    b = (solid->color & 0x000000ff) >> 0;
-
-    color.alpha = (a << 8) | a;
-    color.red = (r << 8) | r;
-    color.green = (g << 8) | g;
-    color.blue = (b << 8) | b;
-
-    return pixman_image_create_solid_fill(&color);
+    return pixman_image_create_solid_fill(color);
 }
 
 static pixman_image_t *
@@ -309,24 +299,16 @@ create_bits_picture(PicturePtr pict, Bool has_clip, int *xoff, int *yoff)
         return NULL;
 
 #ifdef FB_ACCESS_WRAPPER
-#if FB_SHIFT==5
-
     pixman_image_set_accessors(image,
                                (pixman_read_memory_func_t) wfbReadMemory,
                                (pixman_write_memory_func_t) wfbWriteMemory);
-
-#else
-
-#error The pixman library only works when FbBits is 32 bits wide
-
-#endif
 #endif
 
     /* pCompositeClip is undefined for source pictures, so
      * only set the clip region for pictures with drawables
      */
     if (has_clip) {
-        if (pict->clientClipType != CT_NONE)
+        if (pict->clientClip)
             pixman_image_set_has_client_clip(image, TRUE);
 
         if (*xoff || *yoff)
@@ -352,6 +334,11 @@ create_bits_picture(PicturePtr pict, Bool has_clip, int *xoff, int *yoff)
 static pixman_image_t *image_from_pict_internal(PicturePtr pict, Bool has_clip,
                                                 int *xoff, int *yoff,
                                                 Bool is_alpha_map);
+
+static void image_destroy(pixman_image_t *image, void *data)
+{
+    fbFinishAccess((DrawablePtr)data);
+}
 
 static void
 set_image_properties(pixman_image_t * image, PicturePtr pict, Bool has_clip,
@@ -437,6 +424,10 @@ set_image_properties(pixman_image_t * image, PicturePtr pict, Bool has_clip,
         break;
     }
 
+    if (pict->pDrawable)
+        pixman_image_set_destroy_function(image, &image_destroy,
+                                          pict->pDrawable);
+
     pixman_image_set_filter(image, filter,
                             (pixman_fixed_t *) pict->filter_params,
                             pict->filter_nparams);
@@ -489,8 +480,8 @@ image_from_pict(PicturePtr pict, Bool has_clip, int *xoff, int *yoff)
 void
 free_pixman_pict(PicturePtr pict, pixman_image_t * image)
 {
-    if (image && pixman_image_unref(image) && pict->pDrawable)
-        fbFinishAccess(pict->pDrawable);
+    if (image)
+        pixman_image_unref(image);
 }
 
 Bool

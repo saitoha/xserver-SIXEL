@@ -7,15 +7,18 @@ libXwinGLX_la_SOURCES = \
 	glwindows.h \
 	glshim.c \
 	indirect.c \
+	indirect.h \
 	wgl_ext_api.c \
 	wgl_ext_api.h
 
+if XWIN_WINDOWS_DRI
+libXwinGLX_la_SOURCES += \
+	dri_helpers.c \
+	dri_helpers.h
+endif
+
 libnativeGLthunk_la_SOURCES = \
 	glthunk.c
-
-if XWIN_MULTIWINDOW
-DEFS_MULTIWINDOW = -DXWIN_MULTIWINDOW
-endif
 
 if XWIN_MULTIWINDOWEXTWM
 DEFS_MULTIWINDOWEXTWM = -DXWIN_MULTIWINDOWEXTWM
@@ -25,7 +28,9 @@ if XWIN_GLX_WINDOWS
 DEFS_GLX_WINDOWS = -DXWIN_GLX_WINDOWS
 endif
 
-DEFS =  $(DEFS_MULTIWINDOW) $(DEFS_MULTIWINDOWEXTWM) $(DEFS_GLX_WINDOWS)
+DEFS = \
+	$(DEFS_MULTIWINDOWEXTWM) \
+	$(DEFS_GLX_WINDOWS)
 
 AM_CPPFLAGS = -I$(top_srcdir)/miext/rootless
 
@@ -46,20 +51,21 @@ else
 GENGLWRAPPERSOPTS="-nodebug"
 endif
 
-generated_wgl_wrappers.c: $(srcdir)/gen_gl_wrappers.py $(KHRONOS_SPEC_DIR)/wgl.xml $(KHRONOS_SPEC_DIR)/reg.py
+generated_wgl_wrappers.ic: $(srcdir)/gen_gl_wrappers.py $(KHRONOS_SPEC_DIR)/wgl.xml $(KHRONOS_SPEC_DIR)/reg.py
 	$(AM_V_GEN)PYTHONPATH=$(KHRONOS_SPEC_DIR) $(PYTHON3) $(srcdir)/gen_gl_wrappers.py -registry $(KHRONOS_SPEC_DIR)/wgl.xml -prefix wgl -wrapper -preresolve $(GENGLWRAPPERSOPTS) -outfile $@
 
-generated_gl_shim.c: $(srcdir)/gen_gl_wrappers.py $(KHRONOS_SPEC_DIR)/gl.xml $(KHRONOS_SPEC_DIR)/reg.py
+generated_gl_shim.ic: $(srcdir)/gen_gl_wrappers.py $(KHRONOS_SPEC_DIR)/gl.xml $(KHRONOS_SPEC_DIR)/reg.py
 	$(AM_V_GEN)PYTHONPATH=$(KHRONOS_SPEC_DIR) $(PYTHON3) $(srcdir)/gen_gl_wrappers.py -registry $(KHRONOS_SPEC_DIR)/gl.xml -shim $(GENGLWRAPPERSOPTS) -outfile $@
 
-generated_gl_thunks.c: $(srcdir)/gen_gl_wrappers.py $(KHRONOS_SPEC_DIR)/gl.xml $(KHRONOS_SPEC_DIR)/reg.py
+generated_gl_thunks.ic: $(srcdir)/gen_gl_wrappers.py $(KHRONOS_SPEC_DIR)/gl.xml $(KHRONOS_SPEC_DIR)/reg.py
 	$(AM_V_GEN)PYTHONPATH=$(KHRONOS_SPEC_DIR) $(PYTHON3) $(srcdir)/gen_gl_wrappers.py -registry $(KHRONOS_SPEC_DIR)/gl.xml -thunk $(GENGLWRAPPERSOPTS) -outfile $@
 
 generated_gl_thunks.def: $(srcdir)/gen_gl_wrappers.py $(KHRONOS_SPEC_DIR)/gl.xml $(KHRONOS_SPEC_DIR)/reg.py
 	$(AM_V_GEN)PYTHONPATH=$(KHRONOS_SPEC_DIR) $(PYTHON3) $(srcdir)/gen_gl_wrappers.py -registry $(KHRONOS_SPEC_DIR)/gl.xml -thunkdefs $(GENGLWRAPPERSOPTS) -outfile $@
-endif
 
-BUILT_SOURCES = generated_gl_shim.c generated_gl_thunks.c generated_gl_thunks.def generated_wgl_wrappers.c
+BUILT_SOURCES = generated_gl_shim.ic generated_gl_thunks.ic generated_gl_thunks.def generated_wgl_wrappers.ic
 CLEANFILES = $(BUILT_SOURCES)
+
+endif
 
 EXTRA_DIST = gen_gl_wrappers.py

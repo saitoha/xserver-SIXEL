@@ -76,17 +76,14 @@ DWORD g_dwCurrentThreadID = 0;
 Bool g_fKeyboardHookLL = FALSE;
 Bool g_fNoHelpMessageBox = FALSE;
 Bool g_fSoftwareCursor = FALSE;
-Bool g_fSilentDupError = FALSE;
 Bool g_fNativeGl = TRUE;
-Bool g_fHostInTitle = FALSE;
+Bool g_fHostInTitle = TRUE;
 pthread_mutex_t g_pmTerminating = PTHREAD_MUTEX_INITIALIZER;
 
-#ifdef XWIN_CLIPBOARD
 /*
  * Wrapped DIX functions
  */
 winDispatchProcPtr winProcEstablishConnectionOrig = NULL;
-winDispatchProcPtr winProcSetSelectionOwnerOrig = NULL;
 
 /*
  * Clipboard variables
@@ -94,14 +91,7 @@ winDispatchProcPtr winProcSetSelectionOwnerOrig = NULL;
 
 Bool g_fUnicodeClipboard = TRUE;
 Bool g_fClipboard = TRUE;
-Bool g_fClipboardLaunched = FALSE;
 Bool g_fClipboardStarted = FALSE;
-pthread_t g_ptClipboardProc;
-HWND g_hwndClipboard = NULL;
-void *g_pClipboardDisplay = NULL;
-Window g_iClipboardWindow = None;
-Atom g_atomLastOwnedSelection = None;
-#endif
 
 /*
  * Re-initialize global variables that are invalidated
@@ -112,10 +102,4 @@ void
 winInitializeGlobals(void)
 {
     g_dwCurrentThreadID = GetCurrentThreadId();
-#ifdef XWIN_CLIPBOARD
-    g_iClipboardWindow = None;
-    g_pClipboardDisplay = NULL;
-    g_atomLastOwnedSelection = None;
-    g_hwndClipboard = NULL;
-#endif
 }

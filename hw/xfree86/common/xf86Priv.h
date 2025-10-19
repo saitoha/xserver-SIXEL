@@ -67,7 +67,6 @@ extern _X_EXPORT char *xf86PointerName;
 extern _X_EXPORT char *xf86KeyboardName;
 extern _X_EXPORT int xf86FbBpp;
 extern _X_EXPORT int xf86Depth;
-extern _X_EXPORT Pix24Flags xf86Pix24;
 extern _X_EXPORT rgb xf86Weight;
 extern _X_EXPORT Bool xf86FlipPixels;
 extern _X_EXPORT Gamma xf86Gamma;
@@ -86,16 +85,15 @@ extern _X_EXPORT serverLayoutRec xf86ConfigLayout;
 extern _X_EXPORT DriverPtr *xf86DriverList;
 extern _X_EXPORT int xf86NumDrivers;
 extern _X_EXPORT Bool xf86Resetting;
-extern _X_EXPORT Bool xf86Initialising;
+extern Bool xf86Initialising;
 extern _X_EXPORT int xf86NumScreens;
 extern _X_EXPORT const char *xf86VisualNames[];
 extern _X_EXPORT int xf86Verbose;       /* verbosity level */
 extern _X_EXPORT int xf86LogVerbose;    /* log file verbosity level */
 
-extern _X_EXPORT RootWinPropPtr *xf86RegisteredPropertiesTable;
-
 extern ScrnInfoPtr *xf86GPUScreens;      /* List of pointers to ScrnInfoRecs */
 extern int xf86NumGPUScreens;
+extern _X_EXPORT int xf86DRMMasterFd;              /* Command line argument for DRM master file descriptor */
 #ifndef DEFAULT_VERBOSE
 #define DEFAULT_VERBOSE		0
 #endif
@@ -112,8 +110,6 @@ extern int xf86NumGPUScreens;
 /* xf86Bus.c */
 extern _X_EXPORT Bool xf86BusConfig(void);
 extern _X_EXPORT void xf86BusProbe(void);
-extern _X_EXPORT void xf86AccessEnter(void);
-extern _X_EXPORT void xf86AccessLeave(void);
 extern _X_EXPORT void xf86PostProbe(void);
 extern _X_EXPORT void xf86ClearEntityListForScreen(ScrnInfoPtr pScrn);
 extern _X_EXPORT void xf86AddDevToEntity(int entityIndex, GDevPtr dev);
@@ -139,9 +135,7 @@ DoShowOptions(void)
 /* xf86Events.c */
 
 extern _X_EXPORT void
-xf86Wakeup(void *blockData, int err, void *pReadmask);
-extern _X_HIDDEN int
-xf86SigWrapper(int signo);
+xf86Wakeup(void *blockData, int err);
 extern _X_EXPORT void
 xf86HandlePMEvents(int fd, void *data);
 extern _X_EXPORT int (*xf86PMGetEventFromOs) (int fd, pmEvent * events,

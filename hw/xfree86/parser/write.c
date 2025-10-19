@@ -1,16 +1,16 @@
-/* 
+/*
  * Copyright (c) 1997  Metro Link Incorporated
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"), 
+ * copy of this software and associated documentation files (the "Software"),
  * to deal in the Software without restriction, including without limitation
  * the rights to use, copy, modify, merge, publish, distribute, sublicense,
  * and/or sell copies of the Software, and to permit persons to whom the
  * Software is furnished to do so, subject to the following conditions:
- * 
+ *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
@@ -18,11 +18,11 @@
  * WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF
  * OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
- * 
+ *
  * Except as contained in this notice, the name of the Metro Link shall not be
  * used in advertising or otherwise to promote the sale, use or other dealings
  * in this Software without prior written authorization from Metro Link.
- * 
+ *
  */
 /*
  * Copyright (c) 1997-2003 by The XFree86 Project, Inc.
@@ -63,7 +63,6 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <signal.h>
 #include <errno.h>
 
 #if defined(HAVE_SETEUID) && defined(_POSIX_SAVED_IDS) && _POSIX_SAVED_IDS > 0
@@ -73,14 +72,7 @@
 #define HAS_NO_UIDS
 #endif
 
-#ifdef HAS_NO_UIDS
-#define doWriteConfigFile xf86writeConfigFile
-#define Local /**/
-#else
-#define Local static
-#endif
-
-Local int
+static int
 doWriteConfigFile(const char *filename, XF86ConfigPtr cptr)
 {
     FILE *cf;
@@ -134,26 +126,21 @@ doWriteConfigFile(const char *filename, XF86ConfigPtr cptr)
     return 1;
 }
 
-#ifndef HAS_NO_UIDS
-
 int
 xf86writeConfigFile(const char *filename, XF86ConfigPtr cptr)
 {
+#ifndef HAS_NO_UIDS
     int ret;
-
-#if !defined(HAS_SAVED_IDS_AND_SETEUID)
-    int pid, p;
-    int status;
-    void (*csig) (int);
-#else
-    int ruid, euid;
-#endif
 
     if (getuid() != geteuid()) {
 
 #if !defined(HAS_SAVED_IDS_AND_SETEUID)
+        int pid, p;
+        int status;
+        void (*csig) (int);
+
         /* Need to fork to change ruid without loosing euid */
-        csig = signal(SIGCHLD, SIG_DFL);
+        csig = OsSignal(SIGCHLD, SIG_DFL);
         switch ((pid = fork())) {
         case -1:
             ErrorF("xf86writeConfigFile(): fork failed (%s)\n",
@@ -171,13 +158,14 @@ xf86writeConfigFile(const char *filename, XF86ConfigPtr cptr)
                 p = waitpid(pid, &status, 0);
             } while (p == -1 && errno == EINTR);
         }
-        signal(SIGCHLD, csig);
+        OsSignal(SIGCHLD, csig);
         if (p != -1 && WIFEXITED(status) && WEXITSTATUS(status) == 0)
             return 1;           /* success */
         else
             return 0;
 
 #else                           /* HAS_SAVED_IDS_AND_SETEUID */
+        int ruid, euid;
 
         ruid = getuid();
         euid = geteuid();
@@ -198,9 +186,7 @@ xf86writeConfigFile(const char *filename, XF86ConfigPtr cptr)
 #endif                          /* HAS_SAVED_IDS_AND_SETEUID */
 
     }
-    else {
-        return doWriteConfigFile(filename, cptr);
-    }
-}
-
+    else
 #endif                          /* !HAS_NO_UIDS */
+        return doWriteConfigFile(filename, cptr);
+}

@@ -26,13 +26,13 @@ Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
 
                         All Rights Reserved
 
-Permission to use, copy, modify, and distribute this software and its 
-documentation for any purpose and without fee is hereby granted, 
+Permission to use, copy, modify, and distribute this software and its
+documentation for any purpose and without fee is hereby granted,
 provided that the above copyright notice appear in all copies and that
-both that copyright notice and this permission notice appear in 
+both that copyright notice and this permission notice appear in
 supporting documentation, and that the name of Digital not be
 used in advertising or publicity pertaining to distribution of the
-software without specific, written prior permission.  
+software without specific, written prior permission.
 
 DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
 ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
@@ -97,100 +97,100 @@ SOFTWARE.
 #undef DPMSExtension
 #endif
 
-#ifdef HAVE_KDRIVE_CONFIG_H
-#include <kdrive-config.h>
-#endif
-
-#ifdef HAVE_XGL_CONFIG_H
-#include <xgl-config.h>
-#endif
-
 #include "misc.h"
 #include "extension.h"
 #include "extinit.h"
+#ifdef INXQUARTZ
+#include "nonsdk_extinit.h"
+#endif
 #include "micmap.h"
+#include "os.h"
 #include "globals.h"
 
-/* The following is only a small first step towards run-time
- * configurable extensions.
- */
-typedef struct {
-    const char *name;
-    Bool *disablePtr;
-} ExtensionToggle;
-
-static ExtensionToggle ExtensionToggleList[] = {
-    /* sort order is extension name string as shown in xdpyinfo */
-    {"Generic Events", &noGEExtension},
+/* List of built-in (statically linked) extensions */
+static const ExtensionModule staticExtensions[] = {
+    {GEExtensionInit, "Generic Event Extension", &noGEExtension},
+    {ShapeExtensionInit, "SHAPE", NULL},
+#ifdef MITSHM
+    {ShmExtensionInit, "MIT-SHM", &noMITShmExtension},
+#endif
+    {XInputExtensionInit, "XInputExtension", NULL},
+#ifdef XTEST
+    {XTestExtensionInit, "XTEST", &noTestExtensions},
+#endif
+    {BigReqExtensionInit, "BIG-REQUESTS", NULL},
+    {SyncExtensionInit, "SYNC", NULL},
+    {XkbExtensionInit, "XKEYBOARD", NULL},
+    {XCMiscExtensionInit, "XC-MISC", NULL},
+#ifdef XCSECURITY
+    {SecurityExtensionInit, "SECURITY", &noSecurityExtension},
+#endif
+#ifdef PANORAMIX
+    {PanoramiXExtensionInit, "XINERAMA", &noPanoramiXExtension},
+#endif
+#ifdef INXQUARTZ
+    /* PseudoramiXExtensionInit must be done before RRExtensionInit, or
+     * XQuartz will render windows offscreen.
+     */
+    {PseudoramiXExtensionInit, "PseudoramiX", &noPseudoramiXExtension},
+#endif
+    /* must be before Render to layer DisplayCursor correctly */
+    {XFixesExtensionInit, "XFIXES", &noXFixesExtension},
+#ifdef XF86BIGFONT
+    {XFree86BigfontExtensionInit, "XFree86-Bigfont", &noXFree86BigfontExtension},
+#endif
+    {RenderExtensionInit, "RENDER", &noRenderExtension},
+#ifdef RANDR
+    {RRExtensionInit, "RANDR", &noRRExtension},
+#endif
 #ifdef COMPOSITE
-    {"Composite", &noCompositeExtension},
+    {CompositeExtensionInit, "COMPOSITE", &noCompositeExtension},
 #endif
 #ifdef DAMAGE
-    {"DAMAGE", &noDamageExtension},
-#endif
-#ifdef DBE
-    {"DOUBLE-BUFFER", &noDbeExtension},
-#endif
-#ifdef DPMSExtension
-    {"DPMS", &noDPMSExtension},
-#endif
-#ifdef GLXEXT
-    {"GLX", &noGlxExtension},
+    {DamageExtensionInit, "DAMAGE", &noDamageExtension},
 #endif
 #ifdef SCREENSAVER
-    {"MIT-SCREEN-SAVER", &noScreenSaverExtension},
+    {ScreenSaverExtensionInit, "MIT-SCREEN-SAVER", &noScreenSaverExtension},
 #endif
-#ifdef MITSHM
-    {SHMNAME, &noMITShmExtension},
+#ifdef DBE
+    {DbeExtensionInit, "DOUBLE-BUFFER", &noDbeExtension},
 #endif
-#ifdef RANDR
-    {"RANDR", &noRRExtension},
+#ifdef XRECORD
+    {RecordExtensionInit, "RECORD", &noTestExtensions},
 #endif
-    {"RENDER", &noRenderExtension},
-#ifdef XCSECURITY
-    {"SECURITY", &noSecurityExtension},
+#ifdef DPMSExtension
+    {DPMSExtensionInit, "DPMS", &noDPMSExtension},
+#endif
+#ifdef PRESENT
+    {present_extension_init, "Present", NULL},
+#endif
+#ifdef DRI3
+    {dri3_extension_init, "DRI3", NULL},
 #endif
 #ifdef RES
-    {"X-Resource", &noResExtension},
+    {ResExtensionInit, "X-Resource", &noResExtension},
 #endif
-#ifdef XF86BIGFONT
-    {"XFree86-Bigfont", &noXFree86BigfontExtension},
-#endif
-#ifdef XORGSERVER
-#ifdef XFreeXDGA
-    {"XFree86-DGA", &noXFree86DGAExtension},
-#endif
-#ifdef XF86DRI
-    {"XFree86-DRI", &noXFree86DRIExtension},
-#endif
-#ifdef XF86VIDMODE
-    {"XFree86-VidModeExtension", &noXFree86VidModeExtension},
-#endif
-#endif
-    {"XFIXES", &noXFixesExtension},
-#ifdef PANORAMIX
-    {"XINERAMA", &noPanoramiXExtension},
-#endif
-    {"XInputExtension", NULL},
-    {"XKEYBOARD", NULL},
-#ifdef XSELINUX
-    {"SELinux", &noSELinuxExtension},
-#endif
-    {"XTEST", &noTestExtensions},
 #ifdef XV
-    {"XVideo", &noXvExtension},
+    {XvExtensionInit, "XVideo", &noXvExtension},
+    {XvMCExtensionInit, "XVideo-MotionCompensation", &noXvExtension},
+#endif
+#ifdef XSELINUX
+    {SELinuxExtensionInit, "SELinux", &noSELinuxExtension},
+#endif
+#ifdef GLXEXT
+    {GlxExtensionInit, "GLX", &noGlxExtension},
 #endif
 };
 
 Bool
 EnableDisableExtension(const char *name, Bool enable)
 {
-    ExtensionToggle *ext;
+    const ExtensionModule *ext;
     int i;
 
-    for (i = 0; i < ARRAY_SIZE(ExtensionToggleList); i++) {
-        ext = &ExtensionToggleList[i];
-        if (strcmp(name, ext->name) == 0) {
+    for (i = 0; i < ARRAY_SIZE(staticExtensions); i++) {
+        ext = &staticExtensions[i];
+        if (strcasecmp(name, ext->name) == 0) {
             if (ext->disablePtr != NULL) {
                 *ext->disablePtr = !enable;
                 return TRUE;
@@ -209,12 +209,12 @@ EnableDisableExtension(const char *name, Bool enable)
 void
 EnableDisableExtensionError(const char *name, Bool enable)
 {
-    ExtensionToggle *ext;
+    const ExtensionModule *ext;
     int i;
     Bool found = FALSE;
 
-    for (i = 0; i < ARRAY_SIZE(ExtensionToggleList); i++) {
-        ext = &ExtensionToggleList[i];
+    for (i = 0; i < ARRAY_SIZE(staticExtensions); i++) {
+        ext = &staticExtensions[i];
         if ((strcmp(name, ext->name) == 0) && (ext->disablePtr == NULL)) {
             ErrorF("[mi] Extension \"%s\" can not be disabled\n", name);
             found = TRUE;
@@ -225,85 +225,13 @@ EnableDisableExtensionError(const char *name, Bool enable)
         ErrorF("[mi] Extension \"%s\" is not recognized\n", name);
     ErrorF("[mi] Only the following extensions can be run-time %s:\n",
            enable ? "enabled" : "disabled");
-    for (i = 0; i < ARRAY_SIZE(ExtensionToggleList); i++) {
-        ext = &ExtensionToggleList[i];
+    for (i = 0; i < ARRAY_SIZE(staticExtensions); i++) {
+        ext = &staticExtensions[i];
         if (ext->disablePtr != NULL) {
             ErrorF("[mi]    %s\n", ext->name);
         }
     }
 }
-
-/* List of built-in (statically linked) extensions */
-static const ExtensionModule staticExtensions[] = {
-    {GEExtensionInit, "Generic Event Extension", &noGEExtension},
-    {ShapeExtensionInit, "SHAPE", NULL},
-#ifdef MITSHM
-    {ShmExtensionInit, SHMNAME, &noMITShmExtension},
-#endif
-    {XInputExtensionInit, "XInputExtension", NULL},
-#ifdef XTEST
-    {XTestExtensionInit, XTestExtensionName, &noTestExtensions},
-#endif
-    {BigReqExtensionInit, "BIG-REQUESTS", NULL},
-    {SyncExtensionInit, "SYNC", NULL},
-    {XkbExtensionInit, XkbName, NULL},
-    {XCMiscExtensionInit, "XC-MISC", NULL},
-#ifdef XCSECURITY
-    {SecurityExtensionInit, SECURITY_EXTENSION_NAME, &noSecurityExtension},
-#endif
-#ifdef PANORAMIX
-    {PanoramiXExtensionInit, PANORAMIX_PROTOCOL_NAME, &noPanoramiXExtension},
-#endif
-#ifdef INXQUARTZ
-    /* PseudoramiXExtensionInit must be done before RRExtensionInit, or
-     * XQuartz will render windows offscreen.
-     */
-    {PseudoramiXExtensionInit, "PseudoramiX", &noPseudoramiXExtension},
-#endif
-    /* must be before Render to layer DisplayCursor correctly */
-    {XFixesExtensionInit, "XFIXES", &noXFixesExtension},
-#ifdef XF86BIGFONT
-    {XFree86BigfontExtensionInit, XF86BIGFONTNAME, &noXFree86BigfontExtension},
-#endif
-    {RenderExtensionInit, "RENDER", &noRenderExtension},
-#ifdef RANDR
-    {RRExtensionInit, "RANDR", &noRRExtension},
-#endif
-#ifdef COMPOSITE
-    {CompositeExtensionInit, "COMPOSITE", &noCompositeExtension},
-#endif
-#ifdef DAMAGE
-    {DamageExtensionInit, "DAMAGE", &noDamageExtension},
-#endif
-#ifdef SCREENSAVER
-    {ScreenSaverExtensionInit, ScreenSaverName, &noScreenSaverExtension},
-#endif
-#ifdef DBE
-    {DbeExtensionInit, "DOUBLE-BUFFER", &noDbeExtension},
-#endif
-#ifdef XRECORD
-    {RecordExtensionInit, "RECORD", &noTestExtensions},
-#endif
-#ifdef DPMSExtension
-    {DPMSExtensionInit, DPMSExtensionName, &noDPMSExtension},
-#endif
-#ifdef PRESENT
-    {present_extension_init, PRESENT_NAME, NULL},
-#endif
-#ifdef DRI3
-    {dri3_extension_init, DRI3_NAME, NULL},
-#endif
-#ifdef RES
-    {ResExtensionInit, XRES_NAME, &noResExtension},
-#endif
-#ifdef XV
-    {XvExtensionInit, XvName, &noXvExtension},
-    {XvMCExtensionInit, XvMCName, &noXvExtension},
-#endif
-#ifdef XSELINUX
-    {SELinuxExtensionInit, SELINUX_EXTENSION_NAME, &noSELinuxExtension},
-#endif
-};
 
 static ExtensionModule *ExtensionModuleList = NULL;
 static int numExtensionModules = 0;
@@ -333,6 +261,9 @@ InitExtensions(int argc, char *argv[])
         ext = &ExtensionModuleList[i];
         if (ext->initFunc != NULL &&
             (ext->disablePtr == NULL || !*ext->disablePtr)) {
+            LogMessageVerb(X_INFO, 3, "Initializing extension %s\n",
+                           ext->name);
+
             (ext->initFunc) ();
         }
     }
@@ -349,8 +280,8 @@ NewExtensionModuleList(int size)
         numExtensionModules = 0;
 
     n = numExtensionModules + size;
-    ExtensionModuleList = realloc(ExtensionModuleList,
-                                  n * sizeof(ExtensionModule));
+    ExtensionModuleList = reallocarray(ExtensionModuleList, n,
+                                       sizeof(ExtensionModule));
     if (ExtensionModuleList == NULL) {
         ExtensionModuleList = save;
         return NULL;

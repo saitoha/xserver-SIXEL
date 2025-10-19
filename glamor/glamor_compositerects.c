@@ -57,7 +57,7 @@ _pixman_region_init_clipped_rectangles(pixman_region16_t * region,
     unsigned int i, j;
 
     if (num_rects > ARRAY_SIZE(stack_boxes)) {
-        boxes = malloc(sizeof(pixman_box16_t) * num_rects);
+        boxes = xallocarray(num_rects, sizeof(pixman_box16_t));
         if (boxes == NULL)
             return FALSE;
     }
@@ -107,7 +107,6 @@ glamor_composite_rectangles(CARD8 op,
     struct glamor_pixmap_private *priv;
     pixman_region16_t region;
     pixman_box16_t *boxes;
-    int dst_x, dst_y;
     int num_boxes;
     PicturePtr source = NULL;
     Bool need_free_region = FALSE;
@@ -225,17 +224,18 @@ glamor_composite_rectangles(CARD8 op,
            RegionExtents(&region)->x2, RegionExtents(&region)->y2,
            RegionNumRects(&region));
 
-    glamor_get_drawable_deltas(dst->pDrawable, pixmap, &dst_x, &dst_y);
-    pixman_region_translate(&region, dst_x, dst_y);
-
-    DEBUGF("%s: pixmap +(%d, %d) extents (%d, %d),(%d, %d)\n",
-           __FUNCTION__, dst_x, dst_y,
-           RegionExtents(&region)->x1, RegionExtents(&region)->y1,
-           RegionExtents(&region)->x2, RegionExtents(&region)->y2);
-
     boxes = pixman_region_rectangles(&region, &num_boxes);
     if (op == PictOpSrc || op == PictOpClear) {
         CARD32 pixel;
+        int dst_x, dst_y;
+
+        glamor_get_drawable_deltas(dst->pDrawable, pixmap, &dst_x, &dst_y);
+        pixman_region_translate(&region, dst_x, dst_y);
+
+        DEBUGF("%s: pixmap +(%d, %d) extents (%d, %d),(%d, %d)\n",
+               __FUNCTION__, dst_x, dst_y,
+               RegionExtents(&region)->x1, RegionExtents(&region)->y1,
+               RegionExtents(&region)->x2, RegionExtents(&region)->y2);
 
         if (op == PictOpClear)
             pixel = 0;
@@ -246,7 +246,7 @@ glamor_composite_rectangles(CARD8 op,
         goto done;
     }
     else {
-        if (_X_LIKELY(priv->type != GLAMOR_TEXTURE_LARGE)) {
+        if (_X_LIKELY(glamor_pixmap_priv_is_small(priv))) {
             int error;
 
             source = CreateSolidPicture(0, color, &error);
@@ -254,7 +254,7 @@ glamor_composite_rectangles(CARD8 op,
                 goto done;
             if (glamor_composite_clipped_region(op, source,
                                                 NULL, dst,
-                                                NULL, NULL, priv,
+                                                NULL, NULL, pixmap,
                                                 &region, 0, 0, 0, 0, 0, 0))
                 goto done;
         }

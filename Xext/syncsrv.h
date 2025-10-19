@@ -30,13 +30,13 @@ and Olivetti Research Limited, Cambridge, England.
 
                         All Rights Reserved
 
-Permission to use, copy, modify, and distribute this software and its 
-documentation for any purpose and without fee is hereby granted, 
+Permission to use, copy, modify, and distribute this software and its
+documentation for any purpose and without fee is hereby granted,
 provided that the above copyright notice appear in all copies and that
-both that copyright notice and this permission notice appear in 
+both that copyright notice and this permission notice appear in
 supporting documentation, and that the names of Digital or Olivetti
 not be used in advertising or publicity pertaining to distribution of the
-software without specific, written prior permission.  
+software without specific, written prior permission.
 
 DIGITAL AND OLIVETTI DISCLAIM ALL WARRANTIES WITH REGARD TO THIS
 SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
@@ -67,19 +67,19 @@ typedef enum {
 } SyncCounterType;
 
 typedef void (*SyncSystemCounterQueryValue)(void *counter,
-                                            CARD64 *value_return
+                                            int64_t *value_return
     );
 typedef void (*SyncSystemCounterBracketValues)(void *counter,
-                                               CARD64 *pbracket_less,
-                                               CARD64 *pbracket_greater
+                                               int64_t *pbracket_less,
+                                               int64_t *pbracket_greater
     );
 
 typedef struct _SysCounterInfo {
     SyncCounter *pCounter;
     char *name;
-    CARD64 resolution;
-    CARD64 bracket_greater;
-    CARD64 bracket_less;
+    int64_t resolution;
+    int64_t bracket_greater;
+    int64_t bracket_less;
     SyncCounterType counterType;        /* how can this counter change */
     SyncSystemCounterQueryValue QueryValue;
     SyncSystemCounterBracketValues BracketValues;
@@ -97,7 +97,7 @@ typedef struct _SyncAlarm {
     SyncTrigger trigger;
     ClientPtr client;
     XSyncAlarm alarm_id;
-    CARD64 delta;
+    int64_t delta;
     int events;
     int state;
     SyncAlarmClientList *pEventClients;
@@ -111,7 +111,7 @@ typedef struct {
 
 typedef struct {
     SyncTrigger trigger;
-    CARD64 event_threshold;
+    int64_t event_threshold;
     SyncAwaitHeader *pHeader;
 } SyncAwait;
 
@@ -121,16 +121,15 @@ typedef union {
 } SyncAwaitUnion;
 
 extern SyncCounter* SyncCreateSystemCounter(const char *name,
-                                            CARD64 initial_value,
-                                            CARD64 resolution,
+                                            int64_t initial_value,
+                                            int64_t resolution,
                                             SyncCounterType counterType,
                                             SyncSystemCounterQueryValue QueryValue,
                                             SyncSystemCounterBracketValues BracketValues
     );
 
 extern void SyncChangeCounter(SyncCounter *pCounter,
-                              CARD64 new_value
-    );
+                              int64_t new_value);
 
 extern void SyncDestroySystemCounter(void *pCounter);
 

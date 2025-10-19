@@ -31,20 +31,17 @@ from The Open Group.
 #include <xwin-config.h>
 #endif
 
+#ifdef HAVE_SYS_UTSNAME_H
+#include <sys/utsname.h>
+#endif
+
 #include <../xfree86/common/xorgVersion.h>
 #include "win.h"
 #include "winconfig.h"
 #include "winmsg.h"
 #include "winmonitors.h"
 
-/*
- * References to external symbols
- */
-
-#ifdef XWIN_CLIPBOARD
-extern Bool g_fUnicodeClipboard;
-extern Bool g_fClipboard;
-#endif
+#include "winclipboard/winclipboard.h"
 
 /*
  * Function prototypes
@@ -131,18 +128,13 @@ winInitializeScreenDefaults(void)
     defaultScreenInfo.fDecoration = TRUE;
 #ifdef XWIN_MULTIWINDOWEXTWM
     defaultScreenInfo.fMWExtWM = FALSE;
-    defaultScreenInfo.fInternalWM = FALSE;
 #endif
     defaultScreenInfo.fRootless = FALSE;
-#ifdef XWIN_MULTIWINDOW
     defaultScreenInfo.fMultiWindow = FALSE;
-#endif
-#if defined(XWIN_MULTIWINDOW) || defined(XWIN_MULTIWINDOWEXTWM)
     defaultScreenInfo.fMultiMonitorOverride = FALSE;
-#endif
     defaultScreenInfo.fMultipleMonitors = FALSE;
     defaultScreenInfo.fLessPointer = FALSE;
-    defaultScreenInfo.iResizeMode = resizeWithRandr;
+    defaultScreenInfo.iResizeMode = resizeDefault;
     defaultScreenInfo.fNoTrayIcon = FALSE;
     defaultScreenInfo.iE3BTimeout = WIN_E3B_DEFAULT;
     defaultScreenInfo.fUseWinKillKey = WIN_DEFAULT_WIN_KILL;
@@ -248,7 +240,7 @@ ddxProcessArgument(int argc, char *argv[], int i)
              * OsVendorInit () gets called, otherwise we will overwrite
              * settings changed by parameters such as -fullscreen, etc.
              */
-            winErrorFVerb(2, "ddxProcessArgument - Initializing default "
+            winErrorFVerb(3, "ddxProcessArgument - Initializing default "
                           "screens\n");
             winInitializeScreenDefaults();
         }
@@ -528,10 +520,8 @@ ddxProcessArgument(int argc, char *argv[], int i)
      * Look for the '-fullscreen' argument
      */
     if (IS_OPTION("-fullscreen")) {
-#if defined(XWIN_MULTIWINDOW) || defined(XWIN_MULTIWINDOWEXTWM)
         if (!screenInfoPtr->fMultiMonitorOverride)
             screenInfoPtr->fMultipleMonitors = FALSE;
-#endif
         screenInfoPtr->fFullScreen = TRUE;
 
         /* Indicate that we have processed this argument */
@@ -552,10 +542,8 @@ ddxProcessArgument(int argc, char *argv[], int i)
      * Look for the '-nodecoration' argument
      */
     if (IS_OPTION("-nodecoration")) {
-#if defined(XWIN_MULTIWINDOW) || defined(XWIN_MULTIWINDOWEXTWM)
         if (!screenInfoPtr->fMultiMonitorOverride)
             screenInfoPtr->fMultipleMonitors = FALSE;
-#endif
         screenInfoPtr->fDecoration = FALSE;
 
         /* Indicate that we have processed this argument */
@@ -578,11 +566,8 @@ ddxProcessArgument(int argc, char *argv[], int i)
      * Look for the '-internalwm' argument
      */
     if (IS_OPTION("-internalwm")) {
-        if (!screenInfoPtr->fMultiMonitorOverride)
-            screenInfoPtr->fMultipleMonitors = TRUE;
-        screenInfoPtr->fMWExtWM = TRUE;
-        screenInfoPtr->fInternalWM = TRUE;
-
+        ErrorF("Ignoring obsolete -internalwm option\n");
+        /* Ignored, but we still accept the arg for backwards compatibility */
         /* Indicate that we have processed this argument */
         return 1;
     }
@@ -592,40 +577,32 @@ ddxProcessArgument(int argc, char *argv[], int i)
      * Look for the '-rootless' argument
      */
     if (IS_OPTION("-rootless")) {
-#if defined(XWIN_MULTIWINDOW) || defined(XWIN_MULTIWINDOWEXTWM)
         if (!screenInfoPtr->fMultiMonitorOverride)
             screenInfoPtr->fMultipleMonitors = FALSE;
-#endif
         screenInfoPtr->fRootless = TRUE;
 
         /* Indicate that we have processed this argument */
         return 1;
     }
 
-#ifdef XWIN_MULTIWINDOW
     /*
      * Look for the '-multiwindow' argument
      */
     if (IS_OPTION("-multiwindow")) {
-#if defined(XWIN_MULTIWINDOW) || defined(XWIN_MULTIWINDOWEXTWM)
         if (!screenInfoPtr->fMultiMonitorOverride)
             screenInfoPtr->fMultipleMonitors = TRUE;
-#endif
         screenInfoPtr->fMultiWindow = TRUE;
 
         /* Indicate that we have processed this argument */
         return 1;
     }
-#endif
 
     /*
      * Look for the '-multiplemonitors' argument
      */
     if (IS_OPTION("-multiplemonitors")
         || IS_OPTION("-multimonitors")) {
-#if defined(XWIN_MULTIWINDOW) || defined(XWIN_MULTIWINDOWEXTWM)
         screenInfoPtr->fMultiMonitorOverride = TRUE;
-#endif
         screenInfoPtr->fMultipleMonitors = TRUE;
 
         /* Indicate that we have processed this argument */
@@ -637,9 +614,7 @@ ddxProcessArgument(int argc, char *argv[], int i)
      */
     if (IS_OPTION("-nomultiplemonitors")
         || IS_OPTION("-nomultimonitors")) {
-#if defined(XWIN_MULTIWINDOW) || defined(XWIN_MULTIWINDOWEXTWM)
         screenInfoPtr->fMultiMonitorOverride = TRUE;
-#endif
         screenInfoPtr->fMultipleMonitors = FALSE;
 
         /* Indicate that we have processed this argument */
@@ -667,7 +642,7 @@ ddxProcessArgument(int argc, char *argv[], int i)
         if (IS_OPTION("-resize"))
             mode = resizeWithRandr;
         else if (IS_OPTION("-noresize"))
-            mode = notAllowed;
+            mode = resizeNotAllowed;
         else if (strncmp(argv[i], "-resize=", strlen("-resize=")) == 0) {
             char *option = argv[i] + strlen("-resize=");
 
@@ -676,7 +651,7 @@ ddxProcessArgument(int argc, char *argv[], int i)
             else if (strcmp(option, "scrollbars") == 0)
                 mode = resizeWithScrollbars;
             else if (strcmp(option, "none") == 0)
-                mode = notAllowed;
+                mode = resizeNotAllowed;
             else {
                 ErrorF("ddxProcessArgument - resize - Invalid resize mode %s\n",
                        option);
@@ -695,7 +670,6 @@ ddxProcessArgument(int argc, char *argv[], int i)
         return 1;
     }
 
-#ifdef XWIN_CLIPBOARD
     /*
      * Look for the '-clipboard' argument
      */
@@ -716,7 +690,26 @@ ddxProcessArgument(int argc, char *argv[], int i)
         /* Indicate that we have processed this argument */
         return 1;
     }
-#endif
+
+    /*
+     * Look for the '-primary' argument
+     */
+    if (IS_OPTION("-primary")) {
+        fPrimarySelection = TRUE;
+
+        /* Indicate that we have processed this argument */
+        return 1;
+    }
+
+    /*
+     * Look for the '-noprimary' argument
+     */
+    if (IS_OPTION("-noprimary")) {
+        fPrimarySelection = FALSE;
+
+        /* Indicate that we have processed this argument */
+        return 1;
+    }
 
     /*
      * Look for the '-ignoreinput' argument
@@ -1007,7 +1000,6 @@ ddxProcessArgument(int argc, char *argv[], int i)
         return 2;
     }
 
-#ifdef XWIN_CLIPBOARD
     /*
      * Look for the '-nounicodeclipboard' argument
      */
@@ -1016,7 +1008,6 @@ ddxProcessArgument(int argc, char *argv[], int i)
         /* Indicate that we have processed the argument */
         return 1;
     }
-#endif
 
     if (IS_OPTION("-xkbrules")) {
         CHECK_ARGS(1);
@@ -1059,11 +1050,6 @@ ddxProcessArgument(int argc, char *argv[], int i)
         return 1;
     }
 
-    if (IS_OPTION("-silent-dup-error")) {
-        g_fSilentDupError = TRUE;
-        return 1;
-    }
-
     if (IS_OPTION("-wgl")) {
         g_fNativeGl = TRUE;
         return 1;
@@ -1076,6 +1062,11 @@ ddxProcessArgument(int argc, char *argv[], int i)
 
     if (IS_OPTION("-hostintitle")) {
         g_fHostInTitle = TRUE;
+        return 1;
+    }
+
+    if (IS_OPTION("-nohostintitle")) {
+        g_fHostInTitle = FALSE;
         return 1;
     }
 
@@ -1166,6 +1157,17 @@ winLogVersionInfo(void)
     ErrorF("Vendor: %s\n", XVENDORNAME);
     ErrorF("Release: %d.%d.%d.%d\n", XORG_VERSION_MAJOR,
            XORG_VERSION_MINOR, XORG_VERSION_PATCH, XORG_VERSION_SNAP);
+#ifdef HAVE_SYS_UTSNAME_H
+    {
+        struct utsname name;
+
+        if (uname(&name) >= 0) {
+            ErrorF("OS: %s %s %s %s %s\n", name.sysname, name.nodename,
+                   name.release, name.version, name.machine);
+        }
+    }
+#endif
+    winOS();
     if (strlen(BUILDERSTRING))
         ErrorF("%s\n", BUILDERSTRING);
     ErrorF("Contact: %s\n", BUILDERADDR);

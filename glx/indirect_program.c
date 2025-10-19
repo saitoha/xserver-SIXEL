@@ -1,18 +1,18 @@
 /*
  * (C) Copyright IBM Corporation 2005, 2006
  * All Rights Reserved.
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
  * to deal in the Software without restriction, including without limitation
  * the rights to use, copy, modify, merge, publish, distribute, sub license,
  * and/or sell copies of the Software, and to permit persons to whom the
  * Software is furnished to do so, subject to the following conditions:
- * 
+ *
  * The above copyright notice and this permission notice (including the next
  * paragraph) shall be included in all copies or substantial portions of the
  * Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.  IN NO EVENT SHALL
@@ -56,12 +56,15 @@ DoGetProgramString(struct __GLXclientStateRec *cl, GLbyte * pc,
     __GLXcontext *const cx = __glXForceCurrent(cl, req->contextTag, &error);
     ClientPtr client = cl->client;
 
+    REQUEST_FIXED_SIZE(xGLXVendorPrivateWithReplyReq, 8);
+
     pc += __GLX_VENDPRIV_HDR_SIZE;
     if (cx != NULL) {
         GLenum target;
         GLenum pname;
         GLint compsize = 0;
         char *answer = NULL, answerBuffer[200];
+        xGLXSingleReply reply = { 0, };
 
         if (do_swap) {
             target = (GLenum) bswap_32(*(int *) (pc + 0));
@@ -90,7 +93,7 @@ DoGetProgramString(struct __GLXclientStateRec *cl, GLbyte * pc,
         }
         else {
             __GLX_BEGIN_REPLY(compsize);
-            ((xGLXGetTexImageReply *) &__glXReply)->width = compsize;
+            ((xGLXGetTexImageReply *) &reply)->width = compsize;
             __GLX_SEND_HEADER();
             __GLX_SEND_VOID_ARRAY(compsize);
         }
@@ -109,7 +112,7 @@ __glXDisp_GetProgramStringARB(struct __GLXclientStateRec *cl, GLbyte * pc)
     PFNGLGETPROGRAMSTRINGARBPROC get_program_string =
         __glGetProcAddress("glGetProgramStringARB");
 
-    return DoGetProgramString(cl, pc, get_program, get_program_string, False);
+    return DoGetProgramString(cl, pc, get_program, get_program_string, FALSE);
 }
 
 int
@@ -120,5 +123,5 @@ __glXDispSwap_GetProgramStringARB(struct __GLXclientStateRec *cl, GLbyte * pc)
     PFNGLGETPROGRAMSTRINGARBPROC get_program_string =
         __glGetProcAddress("glGetProgramStringARB");
 
-    return DoGetProgramString(cl, pc, get_program, get_program_string, True);
+    return DoGetProgramString(cl, pc, get_program, get_program_string, TRUE);
 }

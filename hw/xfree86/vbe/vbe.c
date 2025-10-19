@@ -3,10 +3,10 @@
  *                   XFree86 vbe module
  *               Copyright 2000 Egbert Eich
  *
- * The mode query/save/set/restore functions from the vesa driver 
+ * The mode query/save/set/restore functions from the vesa driver
  * have been moved here.
  * Copyright (c) 2000 by Conectiva S.A. (http://www.conectiva.com)
- * Authors: Paulo César Pereira de Andrade <pcpa@conectiva.com.br> 
+ * Authors: Paulo César Pereira de Andrade <pcpa@conectiva.com.br>
  */
 
 #ifdef HAVE_XORG_CONFIG_H
@@ -325,7 +325,7 @@ vbeDoEDID(vbeInfoPtr pVbe, void *unused)
 
     if (!pVbe)
         return NULL;
-    if (pVbe->version < 0x200)
+    if (pVbe->version < 0x102)
         return NULL;
 
     DDC_data = vbeReadEDID(pVbe);
@@ -397,7 +397,7 @@ VBEGetVBEInfo(vbeInfoPtr pVbe)
     i = 0;
     while (modes[i] != 0xffff)
         i++;
-    block->VideoModePtr = malloc(sizeof(CARD16) * (i + 1));
+    block->VideoModePtr = xallocarray(i + 1, sizeof(CARD16));
     memcpy(block->VideoModePtr, modes, sizeof(CARD16) * i);
     block->VideoModePtr[i] = 0xffff;
 
@@ -825,7 +825,7 @@ VBESetGetPaletteData(vbeInfoPtr pVbe, Bool set, int first, int num,
     if (set)
         return data;
 
-    data = malloc(num * sizeof(CARD32));
+    data = xallocarray(num, sizeof(CARD32));
     memcpy(data, pVbe->memory, num * sizeof(CARD32));
 
     return data;

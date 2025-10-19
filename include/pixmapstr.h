@@ -26,13 +26,13 @@ Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
 
                         All Rights Reserved
 
-Permission to use, copy, modify, and distribute this software and its 
-documentation for any purpose and without fee is hereby granted, 
+Permission to use, copy, modify, and distribute this software and its
+documentation for any purpose and without fee is hereby granted,
 provided that the above copyright notice appear in all copies and that
-both that copyright notice and this permission notice appear in 
+both that copyright notice and this permission notice appear in
 supporting documentation, and that the name of Digital not be
 used in advertising or publicity pertaining to distribution of the
-software without specific, written prior permission.  
+software without specific, written prior permission.
 
 DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
 ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
@@ -51,6 +51,8 @@ SOFTWARE.
 #include "regionstr.h"
 #include "privates.h"
 #include "damage.h"
+#include <X11/extensions/randr.h>
+#include "picturestr.h"
 
 typedef struct _Drawable {
     unsigned char type;         /* DRAWABLE_<type> */
@@ -67,7 +69,7 @@ typedef struct _Drawable {
 } DrawableRec;
 
 /*
- * PIXMAP -- device dependent 
+ * PIXMAP -- device dependent
  */
 
 typedef struct _Pixmap {
@@ -86,11 +88,15 @@ typedef struct _Pixmap {
 } PixmapRec;
 
 typedef struct _PixmapDirtyUpdate {
-    PixmapPtr src, slave_dst;
+    DrawablePtr src;            /* Root window / shared pixmap */
+    PixmapPtr slave_dst;        /* Shared / scanout pixmap */
     int x, y;
     DamagePtr damage;
     struct xorg_list ent;
     int dst_x, dst_y;
+    Rotation rotation;
+    PictTransform transform;
+    struct pixman_f_transform f_transform, f_inverse;
 } PixmapDirtyUpdateRec;
 
 static inline void

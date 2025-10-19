@@ -46,7 +46,6 @@ typedef enum {
     PRIVATE_CURSOR_BITS,
 
     /* extension privates */
-    PRIVATE_DAMAGE,
     PRIVATE_GLYPH,
     PRIVATE_GLYPHSET,
     PRIVATE_PICTURE,
@@ -251,6 +250,9 @@ dixFreeScreenSpecificPrivates(ScreenPtr pScreen);
 /* Initialize screen-specific privates in AddScreen */
 extern void
 dixInitScreenSpecificPrivates(ScreenPtr pScreen);
+
+/* is this private created - so hotplug can avoid crashing */
+Bool dixPrivatesCreated(DevPrivateType type);
 
 extern _X_EXPORT void *
 _dixAllocateScreenObjectWithPrivates(ScreenPtr pScreen,

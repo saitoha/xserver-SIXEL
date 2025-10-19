@@ -2,10 +2,12 @@
 #ifndef _XSERV_GLOBAL_H_
 #define _XSERV_GLOBAL_H_
 
-#include <signal.h>
-
 #include "window.h"             /* for WindowPtr */
 #include "extinit.h"
+#ifdef DPMSExtension
+/* sigh, too many drivers assume this */
+#include <X11/extensions/dpmsconst.h>
+#endif
 
 /* Global X server variables that are visible to mi, dix, os, and ddx */
 
@@ -27,16 +29,6 @@ extern _X_EXPORT Bool noTestExtensions;
 extern _X_EXPORT char *SeatId;
 extern _X_EXPORT char *ConnectionInfo;
 extern _X_EXPORT sig_atomic_t inSignalContext;
-
-#ifdef DPMSExtension
-extern _X_EXPORT CARD32 DPMSStandbyTime;
-extern _X_EXPORT CARD32 DPMSSuspendTime;
-extern _X_EXPORT CARD32 DPMSOffTime;
-extern _X_EXPORT CARD16 DPMSPowerLevel;
-extern _X_EXPORT Bool DPMSEnabled;
-extern _X_EXPORT Bool DPMSDisabledSwitch;
-extern _X_EXPORT Bool DPMSCapableFlag;
-#endif
 
 #ifdef PANORAMIX
 extern _X_EXPORT Bool PanoramiXExtensionDisabledHack;

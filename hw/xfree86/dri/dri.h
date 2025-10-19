@@ -263,25 +263,19 @@ extern _X_EXPORT void DRIDestroyInfoRec(DRIInfoPtr DRIInfo);
 
 extern _X_EXPORT Bool DRIFinishScreenInit(ScreenPtr pScreen);
 
-extern _X_EXPORT void DRIWakeupHandler(void *wakeupData,
-                                       int result, void *pReadmask);
+extern _X_EXPORT void DRIWakeupHandler(void *wakeupData, int result);
 
-extern _X_EXPORT void DRIBlockHandler(void *blockData,
-                                      OSTimePtr pTimeout, void *pReadmask);
+extern _X_EXPORT void DRIBlockHandler(void *blockData, void *timeout);
 
-extern _X_EXPORT void DRIDoWakeupHandler(ScreenPtr pScreen,
-                                         unsigned long result,
-                                         void *pReadmask);
+extern _X_EXPORT void DRIDoWakeupHandler(ScreenPtr pScreen, int result);
 
-extern _X_EXPORT void DRIDoBlockHandler(ScreenPtr pScreen,
-                                        void *pTimeout, void *pReadmask);
+extern _X_EXPORT void DRIDoBlockHandler(ScreenPtr pScreen, void *timeout);
 
 extern _X_EXPORT void DRISwapContext(int drmFD, void *oldctx, void *newctx);
 
 extern _X_EXPORT void *DRIGetContextStore(DRIContextPrivPtr context);
 
-extern _X_EXPORT void DRIWindowExposures(WindowPtr pWin,
-                                         RegionPtr prgn, RegionPtr bsreg);
+extern _X_EXPORT void DRIWindowExposures(WindowPtr pWin, RegionPtr prgn);
 
 extern _X_EXPORT Bool DRIDestroyWindow(WindowPtr pWin);
 
@@ -331,11 +325,6 @@ extern _X_EXPORT void DRIMoveBuffersHelper(ScreenPtr pScreen,
                                            int dy,
                                            int *xdir, int *ydir, RegionPtr reg);
 
-extern _X_EXPORT char *DRICreatePCIBusID(const struct pci_device *PciInfo);
-
-extern _X_EXPORT int drmInstallSIGIOHandler(int fd,
-                                            void (*f) (int, void *, void *));
-extern _X_EXPORT int drmRemoveSIGIOHandler(int fd);
 extern _X_EXPORT int DRIMasterFD(ScrnInfoPtr pScrn);
 
 extern _X_EXPORT void *DRIMasterSareaPointer(ScrnInfoPtr pScrn);

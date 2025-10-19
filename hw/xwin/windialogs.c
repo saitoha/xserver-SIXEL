@@ -37,13 +37,6 @@
 #include "winprefs.h"
 
 /*
- * References to external globals
- */
-
-#ifdef XWIN_CLIPBOARD
-extern Bool g_fClipboardStarted;
-#endif
-/*
  * Local function prototypes
  */
 
@@ -208,18 +201,14 @@ winInitDialog(HWND hwndDlg)
                      0, 0, SWP_NOSIZE | SWP_FRAMECHANGED);
     }
 
-#ifdef XWIN_MULTIWINDOW
     if (g_hIconX)
         hIcon = g_hIconX;
     else
-#endif
         hIcon = LoadIcon(g_hInstance, MAKEINTRESOURCE(IDI_XWIN));
 
-#ifdef XWIN_MULTIWINDOW
     if (g_hSmallIconX)
         hIconSmall = g_hSmallIconX;
     else
-#endif
         hIconSmall = LoadImage(g_hInstance,
                                MAKEINTRESOURCE(IDI_XWIN), IMAGE_ICON,
                                GetSystemMetrics(SM_CXSMICON),
@@ -243,15 +232,11 @@ winDisplayExitDialog(winPrivScreenPtr pScreenPriv)
     for (i = 1; i < currentMaxClients; i++)
         if (clients[i] != NullClient)
             liveClients++;
-#if defined(XWIN_MULTIWINDOW)
     /* Count down server internal clients */
     if (pScreenPriv->pScreenInfo->fMultiWindow)
         liveClients -= 2;       /* multiwindow window manager & XMsgProc  */
-#endif
-#if defined(XWIN_CLIPBOARD)
     if (g_fClipboardStarted)
         liveClients--;          /* clipboard manager */
-#endif
 
     /* A user reported that this sometimes drops below zero. just eye-candy. */
     if (liveClients < 0)
@@ -396,8 +381,8 @@ winDisplayDepthChangeDialog(winPrivScreenPtr pScreenPriv)
     }
 
     /*
-     * Display a notification to the user that the visual 
-     * will not be displayed until the Windows display depth 
+     * Display a notification to the user that the visual
+     * will not be displayed until the Windows display depth
      * is restored to the original value.
      */
     g_hDlgDepthChange = CreateDialogParam(g_hInstance,
@@ -418,7 +403,7 @@ winDisplayDepthChangeDialog(winPrivScreenPtr pScreenPriv)
 
 /*
  * Process messages for the dialog that is displayed for
- * disruptive screen depth changes. 
+ * disruptive screen depth changes.
  */
 
 static INT_PTR CALLBACK
@@ -444,15 +429,15 @@ winChangeDepthDlgProc(HWND hwndDialog, UINT message,
         s_pScreenInfo = s_pScreenPriv->pScreenInfo;
 
 #if CYGDEBUG
-        winDebug("winChangeDepthDlgProc - WM_INITDIALOG - s_pScreenPriv: %08x, "
-                 "s_pScreenInfo: %08x\n",
+        winDebug("winChangeDepthDlgProc - WM_INITDIALOG - s_pScreenPriv: %p, "
+                 "s_pScreenInfo: %p\n",
                  s_pScreenPriv, s_pScreenInfo);
 #endif
 
 #if CYGDEBUG
-        winDebug("winChangeDepthDlgProc - WM_INITDIALOG - orig bpp: %d, "
+        winDebug("winChangeDepthDlgProc - WM_INITDIALOG - orig bpp: %u, "
                  "current bpp: %d\n",
-                 s_pScreenInfo->dwBPP,
+                 (unsigned int)s_pScreenInfo->dwBPP,
                  GetDeviceCaps(s_pScreenPriv->hdcScreen, BITSPIXEL));
 #endif
 
@@ -462,9 +447,9 @@ winChangeDepthDlgProc(HWND hwndDialog, UINT message,
 
     case WM_DISPLAYCHANGE:
 #if CYGDEBUG
-        winDebug("winChangeDepthDlgProc - WM_DISPLAYCHANGE - orig bpp: %d, "
+        winDebug("winChangeDepthDlgProc - WM_DISPLAYCHANGE - orig bpp: %u, "
                  "new bpp: %d\n",
-                 s_pScreenInfo->dwBPP,
+                 (unsigned int)s_pScreenInfo->dwBPP,
                  GetDeviceCaps(s_pScreenPriv->hdcScreen, BITSPIXEL));
 #endif
 
@@ -488,7 +473,7 @@ winChangeDepthDlgProc(HWND hwndDialog, UINT message,
         case IDCANCEL:
             winDebug("winChangeDepthDlgProc - WM_COMMAND - IDOK or IDCANCEL\n");
 
-            /* 
+            /*
              * User dismissed the dialog, hide it until the
              * display mode is restored.
              */

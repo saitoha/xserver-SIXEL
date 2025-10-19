@@ -26,13 +26,13 @@ Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
 
                         All Rights Reserved
 
-Permission to use, copy, modify, and distribute this software and its 
-documentation for any purpose and without fee is hereby granted, 
+Permission to use, copy, modify, and distribute this software and its
+documentation for any purpose and without fee is hereby granted,
 provided that the above copyright notice appear in all copies and that
-both that copyright notice and this permission notice appear in 
+both that copyright notice and this permission notice appear in
 supporting documentation, and that the name of Digital not be
 used in advertising or publicity pertaining to distribution of the
-software without specific, written prior permission.  
+software without specific, written prior permission.
 
 DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
 ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
@@ -52,6 +52,7 @@ SOFTWARE.
 #include <X11/X.h>
 #include "os.h"
 #include "osdep.h"
+#include "opaque.h"
 #include <X11/Xos.h>
 #include <signal.h>
 #include <errno.h>
@@ -74,8 +75,6 @@ SOFTWARE.
 #define ADMPATH "/usr/adm/X%smsgs"
 #endif
 
-extern char *display;
-
 #ifdef RLIMIT_DATA
 int limitDataSpace = -1;
 #endif
@@ -85,6 +84,9 @@ int limitStackSpace = -1;
 #ifdef RLIMIT_NOFILE
 int limitNoFile = -1;
 #endif
+
+/* The actual user defined max number of clients */
+int LimitClients = LIMITCLIENTS;
 
 static OsSigWrapperPtr OsSigWrapper = NULL;
 
@@ -111,10 +113,14 @@ OsSigHandler(int signo)
 #endif
 {
 #ifdef RTLD_DI_SETSIGNAL
-    const char *dlerr = dlerror();
+# define SIGNAL_FOR_RTLD_ERROR SIGQUIT
+    if (signo == SIGNAL_FOR_RTLD_ERROR) {
+        const char *dlerr = dlerror();
 
-    if (dlerr) {
-        LogMessageVerbSigSafe(X_ERROR, 1, "Dynamic loader error: %s\n", dlerr);
+        if (dlerr) {
+            LogMessageVerbSigSafe(X_ERROR, 1,
+                                  "Dynamic loader error: %s\n", dlerr);
+        }
     }
 #endif                          /* RTLD_DI_SETSIGNAL */
 
@@ -144,6 +150,9 @@ OsSigHandler(int signo)
     }
 #endif
 
+    if (signo != SIGQUIT)
+        CoreDump = TRUE;
+
     FatalError("Caught signal %d (%s). Server aborting\n",
                signo, strsignal(signo));
 }
@@ -155,8 +164,10 @@ void
 OsInit(void)
 {
     static Bool been_here = FALSE;
+#ifndef XQUARTZ
     static const char *devnull = "/dev/null";
     char fname[PATH_MAX];
+#endif
 
     if (!been_here) {
 #if !defined(WIN32) || defined(__CYGWIN__)
@@ -164,6 +175,7 @@ OsInit(void)
         int i;
 
         int siglist[] = { SIGSEGV, SIGQUIT, SIGILL, SIGFPE, SIGBUS,
+            SIGABRT,
             SIGSYS,
             SIGXCPU,
             SIGXFSZ,
@@ -190,6 +202,9 @@ OsInit(void)
 #ifdef BUSFAULT
         busfault_init();
 #endif
+        server_poll = ospoll_create();
+        if (!server_poll)
+            FatalError("failed to allocate poll structure");
 
 #ifdef HAVE_BACKTRACE
         /*
@@ -208,28 +223,17 @@ OsInit(void)
          * for failures to load libraries/modules at runtime so we can clean up
          * after ourselves.
          */
-        int failure_signal = SIGQUIT;
+        {
+            int failure_signal = SIGNAL_FOR_RTLD_ERROR;
 
-        dlinfo(RTLD_SELF, RTLD_DI_SETSIGNAL, &failure_signal);
+            dlinfo(RTLD_SELF, RTLD_DI_SETSIGNAL, &failure_signal);
+        }
 #endif
 
 #if !defined(XQUARTZ)    /* STDIN is already /dev/null and STDOUT/STDERR is managed by console_redirect.c */
-#if 0 /* for SIXEL */
-# if defined(__APPLE__)
-        int devnullfd = open(devnull, O_RDWR, 0);
-        assert(devnullfd > 2);
-
-        dup2(devnullfd, STDIN_FILENO);
-        dup2(devnullfd, STDOUT_FILENO);
-        close(devnullfd);
-# elif !defined(__CYGWIN__)
-        fclose(stdin);
-        fclose(stdout);
-# endif
-#endif
-        /* 
-         * If a write of zero bytes to stderr returns non-zero, i.e. -1, 
-         * then writing to stderr failed, and we'll write somewhere else 
+        /*
+         * If a write of zero bytes to stderr returns non-zero, i.e. -1,
+         * then writing to stderr failed, and we'll write somewhere else
          * instead. (Apparently this never happens in the Real World.)
          */
         if (write(2, fname, 0) == -1) {

@@ -291,7 +291,10 @@ exaTryDriverSolidFill(PicturePtr pSrc,
         pixel = exaGetPixmapFirstPixel(pSrcPix);
     }
     else
-        pixel = pSrc->pSourcePict->solidFill.color;
+        miRenderColorToPixel(PictureMatchFormat(pDst->pDrawable->pScreen, 32,
+                                                pSrc->format),
+                             &pSrc->pSourcePict->solidFill.fullcolor,
+                             &pixel);
 
     if (!exaGetRGBAFromPixel(pixel, &red, &green, &blue, &alpha,
                              pSrc->pFormat, pSrc->format) ||
@@ -559,7 +562,7 @@ exaCompositeRects(CARD8 op,
         box.y2 = y2 < MAXSHORT ? y2 : MAXSHORT;
 
         /* The pixmap migration code relies on pendingDamage indicating
-         * the bounds of the current rendering, so we need to force 
+         * the bounds of the current rendering, so we need to force
          * the actual damage into that region before we do anything, and
          * (see use of DamagePendingRegion in exaCopyDirty)
          */
@@ -613,7 +616,7 @@ exaCompositeRects(CARD8 op,
     /************************************************************/
 
     if (!pMask) {
-        /* Now we have to flush the damage out from pendingDamage => damage 
+        /* Now we have to flush the damage out from pendingDamage => damage
          * Calling DamageRegionProcessPending has that effect.
          */
 
@@ -636,7 +639,7 @@ exaTryDriverComposite(CARD8 op,
     RegionRec region;
     BoxPtr pbox;
     int nbox;
-    int src_off_x, src_off_y, mask_off_x, mask_off_y, dst_off_x, dst_off_y;
+    int src_off_x, src_off_y, mask_off_x = 0, mask_off_y = 0, dst_off_x, dst_off_y;
     PixmapPtr pSrcPix = NULL, pMaskPix = NULL, pDstPix;
     ExaPixmapPrivPtr pSrcExaPix = NULL, pMaskExaPix = NULL, pDstExaPix;
 
@@ -1141,7 +1144,8 @@ exaTrapezoids(CARD8 op, PicturePtr pSrc, PicturePtr pDst,
 
         exaPrepareAccess(pPicture->pDrawable, EXA_PREPARE_DEST);
         for (; ntrap; ntrap--, traps++)
-            (*ps->RasterizeTrapezoid) (pPicture, traps, -bounds.x1, -bounds.y1);
+            if (xTrapezoidValid(traps))
+                (*ps->RasterizeTrapezoid) (pPicture, traps, -bounds.x1, -bounds.y1);
         exaFinishAccess(pPicture->pDrawable, EXA_PREPARE_DEST);
 
         xRel = bounds.x1 + xSrc - xDst;

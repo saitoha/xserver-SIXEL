@@ -35,7 +35,6 @@
 #include <dix-config.h>
 #endif
 
-#include "quartzCommon.h"
 #include "quartzRandR.h"
 #include "inputstr.h"
 #include "quartz.h"
@@ -43,6 +42,7 @@
 #include "darwinEvents.h"
 #include "pseudoramiX.h"
 #include "extension.h"
+#include "nonsdk_extinit.h"
 #include "glx_extinit.h"
 #define _APPLEWM_SERVER_
 #include "applewmExt.h"
@@ -71,11 +71,14 @@
 #include <rootlessCommon.h>
 #include <Xplugin.h>
 
-/* Work around a bug on Leopard's headers */
-#if defined (__LP64__) && MAC_OS_X_VERSION_MAX_ALLOWED >= 1050 && MAC_OS_X_VERSION_MAX_ALLOWED < 1060
-extern OSErr UpdateSystemActivity(UInt8 activity);
-#define OverallAct 0
-#endif
+// These are vended by the Objective-C runtime, but they are unfortunately
+// not available as API in the macOS SDK.  We are following suit with swift
+// and clang in declaring them inline here.  They canot be removed or changed
+// in the OS without major bincompat ramifications.
+//
+// These were added in macOS 10.7.
+void * _Nonnull objc_autoreleasePoolPush(void);
+void objc_autoreleasePoolPop(void * _Nonnull context);
 
 DevPrivateKeyRec quartzScreenKeyRec;
 int aquaMenuBarHeight = 0;
@@ -148,23 +151,28 @@ QuartzSetupScreen(int index,
     return TRUE;
 }
 
-static const ExtensionModule quartzExtensions[] = {
-    /* PseudoramiX needs to be done before RandR, so
-     * it is in miinitext.c until it can be reordered.
-     * { PseudoramiXExtensionInit, "PseudoramiX", &noPseudoramiXExtension },
-     */
-#ifdef GLXEXT
-    {GlxExtensionInit, "GLX", &noGlxExtension},
-#endif
-};
+/*
+ * QuartzBlockHandler
+ *  Clean out any autoreleased objects.
+ */
+static void
+QuartzBlockHandler(void *blockData, void *pTimeout)
+{
+    static void *poolToken = NULL;
+
+    if (poolToken) {
+        objc_autoreleasePoolPop(poolToken);
+    }
+    poolToken = objc_autoreleasePoolPush();
+}
 
 /*
- * QuartzExtensionInit
- * Initialises XQuartz-specific extensions.
+ * QuartzWakeupHandler
  */
-static void QuartzExtensionInit(void)
+static void
+QuartzWakeupHandler(void *blockData, int result)
 {
-    LoadExtensionList(quartzExtensions, ARRAY_SIZE(quartzExtensions), TRUE);
+    /* nothing here */
 }
 
 /*
@@ -177,6 +185,7 @@ QuartzInitOutput(int argc,
 {
     /* For XQuartz, we want to just use the default signal handler to work better with CrashTracer */
     signal(SIGSEGV, SIG_DFL);
+    signal(SIGABRT, SIG_DFL);
     signal(SIGILL, SIG_DFL);
 #ifdef SIGEMT
     signal(SIGEMT, SIG_DFL);
@@ -206,8 +215,6 @@ QuartzInitOutput(int argc,
 
     // Do display mode specific initialization
     quartzProcs->DisplayInit();
-
-    QuartzExtensionInit();
 }
 
 /*
@@ -299,8 +306,8 @@ QuartzUpdateScreens(void)
 
     quartzProcs->UpdateScreen(pScreen);
 
-    /* miPaintWindow needs to be called after RootlessUpdateScreenPixmap (from xprUpdateScreen) */
-    miPaintWindow(pRoot, &pRoot->borderClip, PW_BACKGROUND);
+    /* PaintWindow needs to be called after RootlessUpdateScreenPixmap (from xprUpdateScreen) */
+    pScreen->PaintWindow(pRoot, &pRoot->borderClip, PW_BACKGROUND);
 
     /* Tell RandR about the new size, so new connections get the correct info */
     RRScreenSizeNotify(pScreen);
@@ -484,7 +491,7 @@ QuartzHide(void)
  *  Enable or disable rendering to the X screen.
  */
 void
-QuartzSetRootClip(BOOL enable)
+QuartzSetRootClip(int mode)
 {
     int i;
 
@@ -493,7 +500,7 @@ QuartzSetRootClip(BOOL enable)
 
     for (i = 0; i < screenInfo.numScreens; i++) {
         if (screenInfo.screens[i]) {
-            SetRootClip(screenInfo.screens[i], enable);
+            SetRootClip(screenInfo.screens[i], mode);
         }
     }
 }

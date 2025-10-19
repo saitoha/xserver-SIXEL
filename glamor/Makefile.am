@@ -14,7 +14,7 @@ libglamor_la_SOURCES = \
 	glamor_font.c \
 	glamor_font.h \
 	glamor_glx.c \
-	glamor_glyphs.c \
+	glamor_composite_glyphs.c \
 	glamor_image.c \
 	glamor_lines.c \
 	glamor_segs.c \
@@ -46,10 +46,17 @@ libglamor_la_SOURCES = \
 	glamor_compositerects.c\
 	glamor_utils.c\
 	glamor_utils.h\
-	glamor_xv.c \
 	glamor_sync.c \
 	glamor.h
 
-libglamor_egl_stubs_la_SOURCES = glamor_egl_stubs.c
+if XV
+libglamor_la_SOURCES += \
+	glamor_xv.c
+endif
+
+libglamor_egl_stubs_la_SOURCES = \
+	glamor_egl_stubs.c \
+	glamor_egl_ext.h \
+	glamor_egl.h
 
 sdk_HEADERS = glamor.h

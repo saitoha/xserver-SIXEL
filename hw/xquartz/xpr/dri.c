@@ -69,8 +69,6 @@
 #include "x-hook.h"
 #include "driWrap.h"
 
-#include <AvailabilityMacros.h>
-
 static DevPrivateKeyRec DRIScreenPrivKeyRec;
 #define DRIScreenPrivKey       (&DRIScreenPrivKeyRec)
 static DevPrivateKeyRec DRIWindowPrivKeyRec;
@@ -138,9 +136,6 @@ DRIFinishScreenInit(ScreenPtr pScreen)
     DRIScreenPrivPtr pDRIPriv = DRI_SCREEN_PRIV(pScreen);
 
     /* Wrap DRI support */
-    pDRIPriv->wrap.WindowExposures = pScreen->WindowExposures;
-    pScreen->WindowExposures = DRIWindowExposures;
-
     pDRIPriv->wrap.CopyWindow = pScreen->CopyWindow;
     pScreen->CopyWindow = DRICopyWindow;
 
@@ -219,12 +214,10 @@ DRIUpdateSurface(DRIDrawablePrivPtr pDRIDrawablePriv, DrawablePtr pDraw)
     if (pDRIDrawablePriv->sid == 0)
         return;
 
-#if MAC_OS_X_VERSION_MAX_ALLOWED >= 1030
     wc.depth = (pDraw->bitsPerPixel == 32 ? XP_DEPTH_ARGB8888
                 : pDraw->bitsPerPixel == 16 ? XP_DEPTH_RGB555 : XP_DEPTH_NIL);
     if (wc.depth != XP_DEPTH_NIL)
         flags |= XP_DEPTH;
-#endif
 
     if (pDraw->type == DRAWABLE_WINDOW) {
         WindowPtr pWin = (WindowPtr)pDraw;
@@ -385,17 +378,13 @@ DRICreateSurface(ScreenPtr pScreen, Drawable id,
 
         if (NULL == pDRIDrawablePriv)
             return FALSE;  /*error*/
-    }
-#if MAC_OS_X_VERSION_MAX_ALLOWED >= 1030
-    else if (pDrawable->type == DRAWABLE_PIXMAP) {
+    } else if (pDrawable->type == DRAWABLE_PIXMAP) {
         pDRIDrawablePriv = CreateSurfaceForPixmap(pScreen,
                                                   (PixmapPtr)pDrawable);
 
         if (NULL == pDRIDrawablePriv)
             return FALSE;  /*error*/
-    }
-#endif
-    else {
+    } else {
         /* We handle GLXPbuffers in a different way (via CGL). */
         return FALSE;
     }
@@ -574,24 +563,6 @@ DRIDrawablePrivDelete(void *pResource, XID id)
     --pDRIPriv->nrWindows;
 
     return TRUE;
-}
-
-void
-DRIWindowExposures(WindowPtr pWin, RegionPtr prgn, RegionPtr bsreg)
-{
-    ScreenPtr pScreen = pWin->drawable.pScreen;
-    DRIScreenPrivPtr pDRIPriv = DRI_SCREEN_PRIV(pScreen);
-    DRIDrawablePrivPtr pDRIDrawablePriv = DRI_DRAWABLE_PRIV_FROM_WINDOW(pWin);
-
-    if (pDRIDrawablePriv) {
-        /* FIXME: something? */
-    }
-
-    pScreen->WindowExposures = pDRIPriv->wrap.WindowExposures;
-
-    (*pScreen->WindowExposures)(pWin, prgn, bsreg);
-
-    pScreen->WindowExposures = DRIWindowExposures;
 }
 
 void

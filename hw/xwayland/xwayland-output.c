@@ -30,6 +30,15 @@
 #include "xwayland.h"
 #include <randrstr.h>
 
+#define ALL_ROTATIONS (RR_Rotate_0   | \
+                       RR_Rotate_90  | \
+                       RR_Rotate_180 | \
+                       RR_Rotate_270 | \
+                       RR_Reflect_X  | \
+                       RR_Reflect_Y)
+
+static void xwl_output_get_xdg_output(struct xwl_output *xwl_output);
+
 static Rotation
 wl_transform_to_xrandr(enum wl_output_transform transform)
 {
@@ -85,9 +94,12 @@ output_handle_geometry(void *data, struct wl_output *wl_output, int x, int y,
                             physical_width, physical_height);
     RROutputSetSubpixelOrder(xwl_output->randr_output,
                              wl_subpixel_to_xrandr(subpixel));
-    xwl_output->x = x;
-    xwl_output->y = y;
 
+    /* Apply the change from wl_output only if xdg-output is not supported */
+    if (!xwl_output->xdg_output) {
+        xwl_output->x = x;
+        xwl_output->y = y;
+    }
     xwl_output->rotation = wl_transform_to_xrandr(transform);
 }
 
@@ -96,46 +108,173 @@ output_handle_mode(void *data, struct wl_output *wl_output, uint32_t flags,
                    int width, int height, int refresh)
 {
     struct xwl_output *xwl_output = data;
-    RRModePtr randr_mode;
 
     if (!(flags & WL_OUTPUT_MODE_CURRENT))
         return;
 
-    xwl_output->width = width;
-    xwl_output->height = height;
+    /* Apply the change from wl_output only if xdg-output is not supported */
+    if (!xwl_output->xdg_output) {
+        xwl_output->width = width;
+        xwl_output->height = height;
+    }
+    xwl_output->refresh = refresh;
+}
 
-    randr_mode = xwayland_cvt(width, height, refresh / 1000.0, 0, 0);
+static inline void
+output_get_new_size(struct xwl_output *xwl_output,
+                    Bool need_rotate,
+                    int *height, int *width)
+{
+    int output_width, output_height;
 
+    if (!need_rotate || (xwl_output->rotation & (RR_Rotate_0 | RR_Rotate_180))) {
+        output_width = xwl_output->width;
+        output_height = xwl_output->height;
+    } else {
+        output_width = xwl_output->height;
+        output_height = xwl_output->width;
+    }
+
+    if (*width < xwl_output->x + output_width)
+        *width = xwl_output->x + output_width;
+
+    if (*height < xwl_output->y + output_height)
+        *height = xwl_output->y + output_height;
+}
+
+static int
+xwl_set_pixmap_visit_window(WindowPtr window, void *data)
+{
+    ScreenPtr screen = window->drawable.pScreen;
+
+    if (screen->GetWindowPixmap(window) == data) {
+        screen->SetWindowPixmap(window, screen->GetScreenPixmap(screen));
+        return WT_WALKCHILDREN;
+    }
+
+    return WT_DONTWALKCHILDREN;
+}
+
+static void
+update_backing_pixmaps(struct xwl_screen *xwl_screen, int width, int height)
+{
+    ScreenPtr pScreen = xwl_screen->screen;
+    WindowPtr pRoot = pScreen->root;
+    PixmapPtr old_pixmap, new_pixmap;
+
+    old_pixmap = pScreen->GetScreenPixmap(pScreen);
+    new_pixmap = pScreen->CreatePixmap(pScreen, width, height,
+                                       pScreen->rootDepth,
+                                       CREATE_PIXMAP_USAGE_BACKING_PIXMAP);
+    pScreen->SetScreenPixmap(new_pixmap);
+
+    if (old_pixmap) {
+        TraverseTree(pRoot, xwl_set_pixmap_visit_window, old_pixmap);
+        pScreen->DestroyPixmap(old_pixmap);
+    }
+
+    pScreen->ResizeWindow(pRoot, 0, 0, width, height, NULL);
+}
+
+static void
+update_screen_size(struct xwl_output *xwl_output, int width, int height)
+{
+    struct xwl_screen *xwl_screen = xwl_output->xwl_screen;
+
+    if (xwl_screen->root_clip_mode == ROOT_CLIP_FULL)
+        SetRootClip(xwl_screen->screen, ROOT_CLIP_NONE);
+
+    if (!xwl_screen->rootless && xwl_screen->screen->root)
+        update_backing_pixmaps (xwl_screen, width, height);
+
+    xwl_screen->width = width;
+    xwl_screen->height = height;
+    xwl_screen->screen->width = width;
+    xwl_screen->screen->height = height;
+    xwl_screen->screen->mmWidth = (width * 25.4) / monitorResolution;
+    xwl_screen->screen->mmHeight = (height * 25.4) / monitorResolution;
+
+    SetRootClip(xwl_screen->screen, xwl_screen->root_clip_mode);
+
+    if (xwl_screen->screen->root) {
+        BoxRec box = { 0, 0, width, height };
+
+        xwl_screen->screen->root->drawable.width = width;
+        xwl_screen->screen->root->drawable.height = height;
+        RegionReset(&xwl_screen->screen->root->winSize, &box);
+        RRScreenSizeNotify(xwl_screen->screen);
+    }
+
+    update_desktop_dimensions();
+}
+
+static void
+apply_output_change(struct xwl_output *xwl_output)
+{
+    struct xwl_screen *xwl_screen = xwl_output->xwl_screen;
+    struct xwl_output *it;
+    int mode_width, mode_height;
+    int width = 0, height = 0, has_this_output = 0;
+    RRModePtr randr_mode;
+    Bool need_rotate;
+
+    /* Clear out the "done" received flags */
+    xwl_output->wl_output_done = FALSE;
+    xwl_output->xdg_output_done = FALSE;
+
+    /* xdg-output sends output size in compositor space. so already rotated */
+    need_rotate = (xwl_output->xdg_output == NULL);
+
+    /* We need to rotate back the logical size for the mode */
+    if (need_rotate || xwl_output->rotation & (RR_Rotate_0 | RR_Rotate_180)) {
+        mode_width = xwl_output->width;
+        mode_height = xwl_output->height;
+    } else {
+        mode_width = xwl_output->height;
+        mode_height = xwl_output->width;
+    }
+
+    randr_mode = xwayland_cvt(mode_width, mode_height,
+                              xwl_output->refresh / 1000.0, 0, 0);
     RROutputSetModes(xwl_output->randr_output, &randr_mode, 1, 1);
-
     RRCrtcNotify(xwl_output->randr_crtc, randr_mode,
                  xwl_output->x, xwl_output->y,
                  xwl_output->rotation, NULL, 1, &xwl_output->randr_output);
+
+    xorg_list_for_each_entry(it, &xwl_screen->output_list, link) {
+        /* output done event is sent even when some property
+         * of output is changed. That means that we may already
+         * have this output. If it is true, we must not add it
+         * into the output_list otherwise we'll corrupt it */
+        if (it == xwl_output)
+            has_this_output = 1;
+
+        output_get_new_size(it, need_rotate, &height, &width);
+    }
+
+    if (!has_this_output) {
+        xorg_list_append(&xwl_output->link, &xwl_screen->output_list);
+
+        /* we did not check this output for new screen size, do it now */
+        output_get_new_size(xwl_output, need_rotate, &height, &width);
+
+	--xwl_screen->expecting_event;
+    }
+
+    update_screen_size(xwl_output, width, height);
 }
 
 static void
 output_handle_done(void *data, struct wl_output *wl_output)
 {
     struct xwl_output *xwl_output = data;
-    struct xwl_screen *xwl_screen = xwl_output->xwl_screen;
-    int width, height;
 
-    xorg_list_append(&xwl_output->link, &xwl_screen->output_list);
-
-    width = 0;
-    height = 0;
-    xorg_list_for_each_entry(xwl_output, &xwl_screen->output_list, link) {
-        if (width < xwl_output->x + xwl_output->width)
-            width = xwl_output->x + xwl_output->width;
-        if (height < xwl_output->y + xwl_output->height)
-            height = xwl_output->y + xwl_output->height;
-    }
-
-    xwl_screen->width = width;
-    xwl_screen->height = height;
-    RRScreenSizeNotify(xwl_screen->screen);
-
-    xwl_screen->expecting_event--;
+    xwl_output->wl_output_done = TRUE;
+    /* Apply the changes from wl_output only if both "done" events are received,
+     * or if xdg-output is not supported.
+     */
+    if (xwl_output->xdg_output_done || !xwl_output->xdg_output)
+        apply_output_change(xwl_output);
 }
 
 static void
@@ -150,6 +289,42 @@ static const struct wl_output_listener output_listener = {
     output_handle_scale
 };
 
+static void
+xdg_output_handle_logical_position(void *data, struct zxdg_output_v1 *xdg_output,
+                                   int32_t x, int32_t y)
+{
+    struct xwl_output *xwl_output = data;
+
+    xwl_output->x = x;
+    xwl_output->y = y;
+}
+
+static void
+xdg_output_handle_logical_size(void *data, struct zxdg_output_v1 *xdg_output,
+                               int32_t width, int32_t height)
+{
+    struct xwl_output *xwl_output = data;
+
+    xwl_output->width = width;
+    xwl_output->height = height;
+}
+
+static void
+xdg_output_handle_done(void *data, struct zxdg_output_v1 *xdg_output)
+{
+    struct xwl_output *xwl_output = data;
+
+    xwl_output->xdg_output_done = TRUE;
+    if (xwl_output->wl_output_done)
+        apply_output_change(xwl_output);
+}
+
+static const struct zxdg_output_v1_listener xdg_output_listener = {
+    xdg_output_handle_logical_position,
+    xdg_output_handle_logical_size,
+    xdg_output_handle_done,
+};
+
 struct xwl_output *
 xwl_output_create(struct xwl_screen *xwl_screen, uint32_t id)
 {
@@ -157,46 +332,94 @@ xwl_output_create(struct xwl_screen *xwl_screen, uint32_t id)
     static int serial;
     char name[256];
 
-    xwl_output = calloc(sizeof *xwl_output, 1);
+    xwl_output = calloc(1, sizeof *xwl_output);
     if (xwl_output == NULL) {
-        ErrorF("create_output ENOMEM");
+        ErrorF("%s ENOMEM\n", __func__);
         return NULL;
     }
 
     xwl_output->output = wl_registry_bind(xwl_screen->registry, id,
                                           &wl_output_interface, 2);
+    if (!xwl_output->output) {
+        ErrorF("Failed binding wl_output\n");
+        goto err;
+    }
+
+    xwl_output->server_output_id = id;
     wl_output_add_listener(xwl_output->output, &output_listener, xwl_output);
 
-    if (snprintf(name, sizeof name, "XWAYLAND%d", serial++) < 0) {
-        ErrorF("create_output ENOMEM");
-        free(xwl_output);
-        return NULL;
-    }
+    snprintf(name, sizeof name, "XWAYLAND%d", serial++);
 
     xwl_output->xwl_screen = xwl_screen;
     xwl_output->randr_crtc = RRCrtcCreate(xwl_screen->screen, xwl_output);
+    if (!xwl_output->randr_crtc) {
+        ErrorF("Failed creating RandR CRTC\n");
+        goto err;
+    }
+    RRCrtcSetRotations (xwl_output->randr_crtc, ALL_ROTATIONS);
+
     xwl_output->randr_output = RROutputCreate(xwl_screen->screen, name,
                                               strlen(name), xwl_output);
+    if (!xwl_output->randr_output) {
+        ErrorF("Failed creating RandR Output\n");
+        goto err;
+    }
+
     RRCrtcGammaSetSize(xwl_output->randr_crtc, 256);
     RROutputSetCrtcs(xwl_output->randr_output, &xwl_output->randr_crtc, 1);
     RROutputSetConnection(xwl_output->randr_output, RR_Connected);
 
+    /* We want the output to be in the list as soon as created so we can
+     * use it when binding to the xdg-output protocol...
+     */
+    xorg_list_append(&xwl_output->link, &xwl_screen->output_list);
+    --xwl_screen->expecting_event;
+
+    if (xwl_screen->xdg_output_manager)
+        xwl_output_get_xdg_output(xwl_output);
+
     return xwl_output;
+
+err:
+    if (xwl_output->randr_crtc)
+        RRCrtcDestroy(xwl_output->randr_crtc);
+    if (xwl_output->output)
+        wl_output_destroy(xwl_output->output);
+    free(xwl_output);
+    return NULL;
 }
 
 void
 xwl_output_destroy(struct xwl_output *xwl_output)
 {
     wl_output_destroy(xwl_output->output);
+    free(xwl_output);
+}
+
+void
+xwl_output_remove(struct xwl_output *xwl_output)
+{
+    struct xwl_output *it;
+    struct xwl_screen *xwl_screen = xwl_output->xwl_screen;
+    int width = 0, height = 0;
+    Bool need_rotate = (xwl_output->xdg_output == NULL);
+
+    xorg_list_del(&xwl_output->link);
+
+    xorg_list_for_each_entry(it, &xwl_screen->output_list, link)
+        output_get_new_size(it, need_rotate, &height, &width);
+    update_screen_size(xwl_output, width, height);
+
     RRCrtcDestroy(xwl_output->randr_crtc);
     RROutputDestroy(xwl_output->randr_output);
-    free(xwl_output);
+
+    xwl_output_destroy(xwl_output);
 }
 
 static Bool
 xwl_randr_get_info(ScreenPtr pScreen, Rotation * rotations)
 {
-    *rotations = 0;
+    *rotations = ALL_ROTATIONS;
 
     return TRUE;
 }
@@ -216,11 +439,36 @@ xwl_screen_init_output(struct xwl_screen *xwl_screen)
     if (!RRScreenInit(xwl_screen->screen))
         return FALSE;
 
-    RRScreenSetSizeRange(xwl_screen->screen, 320, 200, 8192, 8192);
+    RRScreenSetSizeRange(xwl_screen->screen, 16, 16, 32767, 32767);
 
     rp = rrGetScrPriv(xwl_screen->screen);
     rp->rrGetInfo = xwl_randr_get_info;
     rp->rrSetConfig = xwl_randr_set_config;
 
     return TRUE;
+}
+
+static void
+xwl_output_get_xdg_output(struct xwl_output *xwl_output)
+{
+    struct xwl_screen *xwl_screen = xwl_output->xwl_screen;
+
+    xwl_output->xdg_output =
+        zxdg_output_manager_v1_get_xdg_output (xwl_screen->xdg_output_manager,
+                                               xwl_output->output);
+
+    zxdg_output_v1_add_listener(xwl_output->xdg_output,
+                                &xdg_output_listener,
+                                xwl_output);
+}
+
+void
+xwl_screen_init_xdg_output(struct xwl_screen *xwl_screen)
+{
+    struct xwl_output *it;
+
+    assert(xwl_screen->xdg_output_manager);
+
+    xorg_list_for_each_entry(it, &xwl_screen->output_list, link)
+        xwl_output_get_xdg_output(it);
 }

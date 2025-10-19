@@ -20,8 +20,8 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-#ifdef HAVE_CONFIG_H
-#include <kdrive-config.h>
+#ifdef HAVE_DIX_CONFIG_H
+#include <dix-config.h>
 #endif
 #include "kdrive.h"
 
@@ -134,6 +134,7 @@ KdFreePointer(KdPointerInfo * pi)
     free(pi->name);
     free(pi->path);
     input_option_free_list(&pi->options);
+    pi->next = NULL;
     free(pi);
 }
 
@@ -145,6 +146,9 @@ KdFreeKeyboard(KdKeyboardInfo * ki)
     free(ki->xkbRules);
     free(ki->xkbModel);
     free(ki->xkbLayout);
+    free(ki->xkbVariant);
+    free(ki->xkbOptions);
+    input_option_free_list(&ki->options);
     ki->next = NULL;
     free(ki);
 }

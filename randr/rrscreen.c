@@ -41,6 +41,9 @@ RREditConnectionInfo(ScreenPtr pScreen)
     int screen = 0;
     int d;
 
+    if (ConnectionInfo == NULL)
+        return;
+
     connSetup = (xConnSetup *) ConnectionInfo;
     vendor = (char *) connSetup + sizeof(xConnSetup);
     formats = (xPixmapFormat *) ((char *) vendor +
@@ -264,12 +267,12 @@ ProcRRSetScreenSize(ClientPtr client)
         RRCrtcPtr crtc = pScrPriv->crtcs[i];
         RRModePtr mode = crtc->mode;
 
-        if (mode) {
+        if (!RRCrtcIsLeased(crtc) && mode) {
             int source_width = mode->mode.width;
             int source_height = mode->mode.height;
             Rotation rotation = crtc->rotation;
 
-            if (rotation == RR_Rotate_90 || rotation == RR_Rotate_270) {
+            if (rotation & (RR_Rotate_90 | RR_Rotate_270)) {
                 source_width = mode->mode.height;
                 source_height = mode->mode.width;
             }
@@ -322,8 +325,13 @@ static inline void swap_modeinfos(xRRModeInfo *modeinfos, int i)
     swapl(&modeinfos[i].modeFlags);
 }
 
-#define update_arrays(gpuscreen, pScrPriv) do {            \
+#define update_arrays(gpuscreen, pScrPriv, primary_crtc, has_primary) do {            \
     for (j = 0; j < pScrPriv->numCrtcs; j++) {             \
+        if (has_primary && \
+            primary_crtc == pScrPriv->crtcs[j]) { \
+            has_primary = 0;   \
+            continue; \
+        }\
         crtcs[crtc_count] = pScrPriv->crtcs[j]->id;        \
         if (client->swapped)                               \
             swapl(&crtcs[crtc_count]);                     \
@@ -366,9 +374,11 @@ rrGetMultiScreenResources(ClientPtr client, Bool query, ScreenPtr pScreen)
     unsigned long extraLen;
     CARD8 *extra;
     RRCrtc *crtcs;
+    RRCrtcPtr primary_crtc = NULL;
     RROutput *outputs;
     xRRModeInfo *modeinfos;
     CARD8 *names;
+    int has_primary = 0;
 
     /* we need to iterate all the GPU masters and all their output slaves */
     total_crtcs = 0;
@@ -384,7 +394,10 @@ rrGetMultiScreenResources(ClientPtr client, Bool query, ScreenPtr pScreen)
 
     update_totals(pScreen, pScrPriv);
 
-    xorg_list_for_each_entry(iter, &pScreen->output_slave_list, output_head) {
+    xorg_list_for_each_entry(iter, &pScreen->slave_list, slave_head) {
+        if (!iter->is_output_slave)
+            continue;
+
         pScrPriv = rrGetScrPriv(iter);
 
         if (query)
@@ -392,8 +405,6 @@ rrGetMultiScreenResources(ClientPtr client, Bool query, ScreenPtr pScreen)
             return BadAlloc;
         update_totals(iter, pScrPriv);
     }
-
-    ErrorF("reporting %d %d %d %d\n", total_crtcs, total_outputs, total_modes, total_name_len);
 
     pScrPriv = rrGetScrPriv(pScreen);
     rep = (xRRGetScreenResourcesReply) {
@@ -408,8 +419,9 @@ rrGetMultiScreenResources(ClientPtr client, Bool query, ScreenPtr pScreen)
         .nbytesNames = total_name_len
     };
 
-    rep.length = (total_crtcs + total_outputs + total_modes * bytes_to_int32(SIZEOF(xRRModeInfo)) +
-                  bytes_to_int32(rep.nbytesNames));
+    rep.length = (total_crtcs + total_outputs +
+                  total_modes * bytes_to_int32(SIZEOF(xRRModeInfo)) +
+                  bytes_to_int32(total_name_len));
 
     extraLen = rep.length << 2;
     if (extraLen) {
@@ -426,18 +438,28 @@ rrGetMultiScreenResources(ClientPtr client, Bool query, ScreenPtr pScreen)
     modeinfos = (xRRModeInfo *)(outputs + total_outputs);
     names = (CARD8 *)(modeinfos + total_modes);
 
-    /* TODO primary */
     crtc_count = 0;
     output_count = 0;
     mode_count = 0;
 
     pScrPriv = rrGetScrPriv(pScreen);
-    update_arrays(pScreen, pScrPriv);
+    if (pScrPriv->primaryOutput && pScrPriv->primaryOutput->crtc) {
+        has_primary = 1;
+        primary_crtc = pScrPriv->primaryOutput->crtc;
+        crtcs[0] = pScrPriv->primaryOutput->crtc->id;
+        if (client->swapped)
+            swapl(&crtcs[0]);
+        crtc_count = 1;
+    }
+    update_arrays(pScreen, pScrPriv, primary_crtc, has_primary);
 
-    xorg_list_for_each_entry(iter, &pScreen->output_slave_list, output_head) {
+    xorg_list_for_each_entry(iter, &pScreen->slave_list, slave_head) {
+        if (!iter->is_output_slave)
+            continue;
+
         pScrPriv = rrGetScrPriv(iter);
 
-        update_arrays(iter, pScrPriv);
+        update_arrays(iter, pScrPriv, primary_crtc, has_primary);
     }
 
     assert(bytes_to_int32((char *) names - (char *) extra) == rep.length);
@@ -487,7 +509,7 @@ rrGetScreenResources(ClientPtr client, Bool query)
         if (!RRGetInfo(pScreen, query))
             return BadAlloc;
 
-    if (!xorg_list_is_empty(&pScreen->output_slave_list))
+    if (pScreen->output_slaves)
         return rrGetMultiScreenResources(client, query, pScreen);
 
     if (!pScrPriv) {
@@ -536,7 +558,7 @@ rrGetScreenResources(ClientPtr client, Bool query)
 
         extraLen = rep.length << 2;
         if (extraLen) {
-            extra = malloc(extraLen);
+            extra = calloc(1, extraLen);
             if (!extra) {
                 free(modes);
                 return BadAlloc;

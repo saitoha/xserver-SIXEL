@@ -66,17 +66,6 @@ typedef struct _CompositeClient {
 #define GetCompositeClient(pClient) ((CompositeClientPtr) \
     dixLookupPrivate(&(pClient)->devPrivates, CompositeClientPrivateKey))
 
-static void
-CompositeClientCallback(CallbackListPtr *list, void *closure, void *data)
-{
-    NewClientInfoRec *clientinfo = (NewClientInfoRec *) data;
-    ClientPtr pClient = clientinfo->client;
-    CompositeClientPtr pCompositeClient = GetCompositeClient(pClient);
-
-    pCompositeClient->major_version = 0;
-    pCompositeClient->minor_version = 0;
-}
-
 static int
 FreeCompositeClientWindow(void *value, XID ccwid)
 {
@@ -299,7 +288,7 @@ ProcCompositeGetOverlayWindow(ClientPtr client)
     VERIFY_WINDOW(pWin, stuff->window, client, DixGetAttrAccess);
     pScreen = pWin->drawable.pScreen;
 
-    /* 
+    /*
      * Create an OverlayClient structure to mark this client's
      * interest in the overlay window
      */
@@ -351,7 +340,7 @@ ProcCompositeReleaseOverlayWindow(ClientPtr client)
     REQUEST_SIZE_MATCH(xCompositeReleaseOverlayWindowReq);
     VERIFY_WINDOW(pWin, stuff->window, client, DixGetAttrAccess);
 
-    /* 
+    /*
      * Has client queried a reference to the overlay window
      * on this screen? If not, generate an error.
      */
@@ -386,7 +375,7 @@ ProcCompositeDispatch(ClientPtr client)
         return BadRequest;
 }
 
-static int
+static int _X_COLD
 SProcCompositeQueryVersion(ClientPtr client)
 {
     REQUEST(xCompositeQueryVersionReq);
@@ -398,7 +387,7 @@ SProcCompositeQueryVersion(ClientPtr client)
     return (*ProcCompositeVector[stuff->compositeReqType]) (client);
 }
 
-static int
+static int _X_COLD
 SProcCompositeRedirectWindow(ClientPtr client)
 {
     REQUEST(xCompositeRedirectWindowReq);
@@ -409,7 +398,7 @@ SProcCompositeRedirectWindow(ClientPtr client)
     return (*ProcCompositeVector[stuff->compositeReqType]) (client);
 }
 
-static int
+static int _X_COLD
 SProcCompositeRedirectSubwindows(ClientPtr client)
 {
     REQUEST(xCompositeRedirectSubwindowsReq);
@@ -420,7 +409,7 @@ SProcCompositeRedirectSubwindows(ClientPtr client)
     return (*ProcCompositeVector[stuff->compositeReqType]) (client);
 }
 
-static int
+static int _X_COLD
 SProcCompositeUnredirectWindow(ClientPtr client)
 {
     REQUEST(xCompositeUnredirectWindowReq);
@@ -431,7 +420,7 @@ SProcCompositeUnredirectWindow(ClientPtr client)
     return (*ProcCompositeVector[stuff->compositeReqType]) (client);
 }
 
-static int
+static int _X_COLD
 SProcCompositeUnredirectSubwindows(ClientPtr client)
 {
     REQUEST(xCompositeUnredirectSubwindowsReq);
@@ -442,7 +431,7 @@ SProcCompositeUnredirectSubwindows(ClientPtr client)
     return (*ProcCompositeVector[stuff->compositeReqType]) (client);
 }
 
-static int
+static int _X_COLD
 SProcCompositeCreateRegionFromBorderClip(ClientPtr client)
 {
     REQUEST(xCompositeCreateRegionFromBorderClipReq);
@@ -454,7 +443,7 @@ SProcCompositeCreateRegionFromBorderClip(ClientPtr client)
     return (*ProcCompositeVector[stuff->compositeReqType]) (client);
 }
 
-static int
+static int _X_COLD
 SProcCompositeNameWindowPixmap(ClientPtr client)
 {
     REQUEST(xCompositeNameWindowPixmapReq);
@@ -466,7 +455,7 @@ SProcCompositeNameWindowPixmap(ClientPtr client)
     return (*ProcCompositeVector[stuff->compositeReqType]) (client);
 }
 
-static int
+static int _X_COLD
 SProcCompositeGetOverlayWindow(ClientPtr client)
 {
     REQUEST(xCompositeGetOverlayWindowReq);
@@ -477,7 +466,7 @@ SProcCompositeGetOverlayWindow(ClientPtr client)
     return (*ProcCompositeVector[stuff->compositeReqType]) (client);
 }
 
-static int
+static int _X_COLD
 SProcCompositeReleaseOverlayWindow(ClientPtr client)
 {
     REQUEST(xCompositeReleaseOverlayWindowReq);
@@ -488,17 +477,20 @@ SProcCompositeReleaseOverlayWindow(ClientPtr client)
     return (*ProcCompositeVector[stuff->compositeReqType]) (client);
 }
 
-static int (*SProcCompositeVector[CompositeNumberRequests]) (ClientPtr) = {
-SProcCompositeQueryVersion,
-        SProcCompositeRedirectWindow,
-        SProcCompositeRedirectSubwindows,
-        SProcCompositeUnredirectWindow,
-        SProcCompositeUnredirectSubwindows,
-        SProcCompositeCreateRegionFromBorderClip,
-        SProcCompositeNameWindowPixmap,
-        SProcCompositeGetOverlayWindow, SProcCompositeReleaseOverlayWindow,};
-
 static int
+(*SProcCompositeVector[CompositeNumberRequests]) (ClientPtr) = {
+    SProcCompositeQueryVersion,
+    SProcCompositeRedirectWindow,
+    SProcCompositeRedirectSubwindows,
+    SProcCompositeUnredirectWindow,
+    SProcCompositeUnredirectSubwindows,
+    SProcCompositeCreateRegionFromBorderClip,
+    SProcCompositeNameWindowPixmap,
+    SProcCompositeGetOverlayWindow,
+    SProcCompositeReleaseOverlayWindow,
+};
+
+static int _X_COLD
 SProcCompositeDispatch(ClientPtr client)
 {
     REQUEST(xReq);
@@ -510,16 +502,17 @@ SProcCompositeDispatch(ClientPtr client)
 }
 
 /** @see GetDefaultBytes */
+static SizeType coreGetWindowBytes;
+
 static void
-GetCompositeClientWindowBytes(void *value, XID id, ResourceSizePtr size)
+GetCompositeWindowBytes(void *value, XID id, ResourceSizePtr size)
 {
     WindowPtr window = value;
 
-    /* Currently only pixmap bytes are reported to clients. */
-    size->resourceSize = 0;
+    /* call down */
+    coreGetWindowBytes(value, id, size);
 
-    /* Calculate pixmap reference sizes. */
-    size->pixmapRefSize = 0;
+    /* account for redirection */
     if (window->redirectDraw != RedirectDrawNone)
     {
         SizeType pixmapSizeFunc = GetResourceTypeSizeFunc(RT_PIXMAP);
@@ -563,8 +556,8 @@ CompositeExtensionInit(void)
     if (!CompositeClientWindowType)
         return;
 
-    SetResourceTypeSizeFunc(CompositeClientWindowType,
-                            GetCompositeClientWindowBytes);
+    coreGetWindowBytes = GetResourceTypeSizeFunc(RT_WINDOW);
+    SetResourceTypeSizeFunc(RT_WINDOW, GetCompositeWindowBytes);
 
     CompositeClientSubwindowsType = CreateNewResourceType
         (FreeCompositeClientSubwindows, "CompositeClientSubwindows");
@@ -580,9 +573,6 @@ CompositeExtensionInit(void)
                                sizeof(CompositeClientRec)))
         return;
 
-    if (!AddCallback(&ClientStateCallback, CompositeClientCallback, 0))
-        return;
-
     for (s = 0; s < screenInfo.numScreens; s++)
         if (!compScreenInit(screenInfo.screens[s]))
             return;
@@ -593,9 +583,6 @@ CompositeExtensionInit(void)
     if (!extEntry)
         return;
     CompositeReqCode = (CARD8) extEntry->base;
-
-    miRegisterRedirectBorderClipProc(compSetRedirectBorderClip,
-                                     compGetRedirectBorderClip);
 
     /* Initialization succeeded */
     noCompositeExtension = FALSE;

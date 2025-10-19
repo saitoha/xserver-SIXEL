@@ -106,7 +106,7 @@ PanoramiXCreateWindow(ClientPtr client)
     if ((Mask) stuff->mask & CWColormap) {
         cmap_offset = Ones((Mask) stuff->mask & (CWColormap - 1));
         tmp = *((CARD32 *) &stuff[1] + cmap_offset);
-        if ((tmp != CopyFromParent) && (tmp != None)) {
+        if (tmp != CopyFromParent) {
             result = dixLookupResourceByType((void **) &cmap, tmp,
                                              XRT_COLORMAP, client,
                                              DixReadAccess);
@@ -210,7 +210,7 @@ PanoramiXChangeWindowAttributes(ClientPtr client)
     if ((Mask) stuff->valueMask & CWColormap) {
         cmap_offset = Ones((Mask) stuff->valueMask & (CWColormap - 1));
         tmp = *((CARD32 *) &stuff[1] + cmap_offset);
-        if ((tmp != CopyFromParent) && (tmp != None)) {
+        if (tmp != CopyFromParent) {
             result = dixLookupResourceByType((void **) &cmap, tmp,
                                              XRT_COLORMAP, client,
                                              DixReadAccess);
@@ -509,7 +509,7 @@ PanoramiXConfigureWindow(ClientPtr client)
         }
     }
 
-    /* have to go forward or you get expose events before 
+    /* have to go forward or you get expose events before
        ConfigureNotify events */
     FOR_NSCREENS_FORWARD(j) {
         stuff->window = win->info[j].id;
@@ -1037,7 +1037,7 @@ PanoramiXClearToBackground(ClientPtr client)
     return result;
 }
 
-/* 
+/*
     For Window to Pixmap copies you're screwed since each screen's
     pixmap will look like what it sees on its screen.  Unless the
     screens overlap and the window lies on each, the two copies
@@ -1050,7 +1050,7 @@ PanoramiXClearToBackground(ClientPtr client)
 int
 PanoramiXCopyArea(ClientPtr client)
 {
-    int j, result, srcx, srcy, dstx, dsty;
+    int j, result, srcx, srcy, dstx, dsty, width, height;
     PanoramiXRes *gc, *src, *dst;
     Bool srcIsRoot = FALSE;
     Bool dstIsRoot = FALSE;
@@ -1091,6 +1091,8 @@ PanoramiXCopyArea(ClientPtr client)
     srcy = stuff->srcY;
     dstx = stuff->dstX;
     dsty = stuff->dstY;
+    width = stuff->width;
+    height = stuff->height;
     if ((dst->type == XRT_PIXMAP) && (src->type == XRT_WINDOW)) {
         DrawablePtr drawables[MAXSCREENS];
         DrawablePtr pDst;
@@ -1103,15 +1105,18 @@ PanoramiXCopyArea(ClientPtr client)
                                    DixGetAttrAccess);
             if (rc != Success)
                 return rc;
+            drawables[j]->pScreen->SourceValidate(drawables[j], 0, 0,
+                                                  drawables[j]->width,
+                                                  drawables[j]->height,
+                                                  IncludeInferiors);
         }
 
-        pitch = PixmapBytePad(stuff->width, drawables[0]->depth);
-        if (!(data = calloc(1, stuff->height * pitch)))
+        pitch = PixmapBytePad(width, drawables[0]->depth);
+        if (!(data = calloc(height, pitch)))
             return BadAlloc;
 
-        XineramaGetImageData(drawables, srcx, srcy,
-                             stuff->width, stuff->height, ZPixmap, ~0, data,
-                             pitch, srcIsRoot);
+        XineramaGetImageData(drawables, srcx, srcy, width, height, ZPixmap, ~0,
+                             data, pitch, srcIsRoot);
 
         FOR_NSCREENS_BACKWARD(j) {
             stuff->gc = gc->info[j].id;
@@ -1123,14 +1128,63 @@ PanoramiXCopyArea(ClientPtr client)
             }
 
             (*pGC->ops->PutImage) (pDst, pGC, pDst->depth, dstx, dsty,
-                                   stuff->width, stuff->height,
-                                   0, ZPixmap, data);
-
+                                   width, height, 0, ZPixmap, data);
             if (dstShared)
                 break;
         }
-
         free(data);
+
+        if (pGC->graphicsExposures) {
+            RegionRec rgn;
+            int dx, dy;
+            BoxRec sourceBox;
+
+            dx = drawables[0]->x;
+            dy = drawables[0]->y;
+            if (srcIsRoot) {
+                dx += screenInfo.screens[0]->x;
+                dy += screenInfo.screens[0]->y;
+            }
+
+            sourceBox.x1 = min(srcx + dx, 0);
+            sourceBox.y1 = min(srcy + dy, 0);
+            sourceBox.x2 = max(sourceBox.x1 + width, 32767);
+            sourceBox.y2 = max(sourceBox.y1 + height, 32767);
+
+            RegionInit(&rgn, &sourceBox, 1);
+
+            /* subtract the (screen-space) clips of the source drawables */
+            FOR_NSCREENS(j) {
+                ScreenPtr screen = screenInfo.screens[j];
+                RegionPtr sd;
+
+                if (pGC->subWindowMode == IncludeInferiors)
+                    sd = NotClippedByChildren((WindowPtr)drawables[j]);
+                else
+                    sd = &((WindowPtr)drawables[j])->clipList;
+
+                if (srcIsRoot)
+                    RegionTranslate(&rgn, -screen->x, -screen->y);
+
+                RegionSubtract(&rgn, &rgn, sd);
+
+                if (srcIsRoot)
+                    RegionTranslate(&rgn, screen->x, screen->y);
+
+                if (pGC->subWindowMode == IncludeInferiors)
+                    RegionDestroy(sd);
+            }
+
+            /* -dx/-dy to get back to dest-relative, plus request offsets */
+            RegionTranslate(&rgn, -dx + dstx, -dy + dsty);
+
+            /* intersect with gc clip; just one screen is fine because pixmap */
+            RegionIntersect(&rgn, &rgn, pGC->pCompositeClip);
+
+            /* and expose */
+            SendGraphicsExpose(client, &rgn, dst->info[0].id, X_CopyArea, 0);
+            RegionUninit(&rgn);
+        }
     }
     else {
         DrawablePtr pDst = NULL, pSrc = NULL;
@@ -1193,9 +1247,8 @@ PanoramiXCopyArea(ClientPtr client)
             Bool overlap;
 
             RegionValidate(&totalReg, &overlap);
-            (*pDst->pScreen->SendGraphicsExpose) (client, &totalReg,
-                                                  stuff->dstDrawable,
-                                                  X_CopyArea, 0);
+            SendGraphicsExpose(client, &totalReg, stuff->dstDrawable,
+                               X_CopyArea, 0);
             RegionUninit(&totalReg);
         }
     }
@@ -1306,9 +1359,8 @@ PanoramiXCopyPlane(ClientPtr client)
         Bool overlap;
 
         RegionValidate(&totalReg, &overlap);
-        (*pdstDraw->pScreen->SendGraphicsExpose) (client, &totalReg,
-                                                  stuff->dstDrawable,
-                                                  X_CopyPlane, 0);
+        SendGraphicsExpose(client, &totalReg, stuff->dstDrawable,
+                           X_CopyPlane, 0);
         RegionUninit(&totalReg);
     }
 
@@ -1343,7 +1395,7 @@ PanoramiXPolyPoint(ClientPtr client)
     isRoot = (draw->type == XRT_WINDOW) && draw->u.win.root;
     npoint = bytes_to_int32((client->req_len << 2) - sizeof(xPolyPointReq));
     if (npoint > 0) {
-        origPts = malloc(npoint * sizeof(xPoint));
+        origPts = xallocarray(npoint, sizeof(xPoint));
         memcpy((char *) origPts, (char *) &stuff[1], npoint * sizeof(xPoint));
         FOR_NSCREENS_FORWARD(j) {
 
@@ -1408,7 +1460,7 @@ PanoramiXPolyLine(ClientPtr client)
     isRoot = IS_ROOT_DRAWABLE(draw);
     npoint = bytes_to_int32((client->req_len << 2) - sizeof(xPolyLineReq));
     if (npoint > 0) {
-        origPts = malloc(npoint * sizeof(xPoint));
+        origPts = xallocarray(npoint, sizeof(xPoint));
         memcpy((char *) origPts, (char *) &stuff[1], npoint * sizeof(xPoint));
         FOR_NSCREENS_FORWARD(j) {
 
@@ -1477,7 +1529,7 @@ PanoramiXPolySegment(ClientPtr client)
         return BadLength;
     nsegs >>= 3;
     if (nsegs > 0) {
-        origSegs = malloc(nsegs * sizeof(xSegment));
+        origSegs = xallocarray(nsegs, sizeof(xSegment));
         memcpy((char *) origSegs, (char *) &stuff[1], nsegs * sizeof(xSegment));
         FOR_NSCREENS_FORWARD(j) {
 
@@ -1545,7 +1597,7 @@ PanoramiXPolyRectangle(ClientPtr client)
         return BadLength;
     nrects >>= 3;
     if (nrects > 0) {
-        origRecs = malloc(nrects * sizeof(xRectangle));
+        origRecs = xallocarray(nrects, sizeof(xRectangle));
         memcpy((char *) origRecs, (char *) &stuff[1],
                nrects * sizeof(xRectangle));
         FOR_NSCREENS_FORWARD(j) {
@@ -1612,7 +1664,7 @@ PanoramiXPolyArc(ClientPtr client)
         return BadLength;
     narcs /= sizeof(xArc);
     if (narcs > 0) {
-        origArcs = malloc(narcs * sizeof(xArc));
+        origArcs = xallocarray(narcs, sizeof(xArc));
         memcpy((char *) origArcs, (char *) &stuff[1], narcs * sizeof(xArc));
         FOR_NSCREENS_FORWARD(j) {
 
@@ -1674,7 +1726,7 @@ PanoramiXFillPoly(ClientPtr client)
 
     count = bytes_to_int32((client->req_len << 2) - sizeof(xFillPolyReq));
     if (count > 0) {
-        locPts = malloc(count * sizeof(DDXPointRec));
+        locPts = xallocarray(count, sizeof(DDXPointRec));
         memcpy((char *) locPts, (char *) &stuff[1],
                count * sizeof(DDXPointRec));
         FOR_NSCREENS_FORWARD(j) {
@@ -1743,7 +1795,7 @@ PanoramiXPolyFillRectangle(ClientPtr client)
         return BadLength;
     things >>= 3;
     if (things > 0) {
-        origRects = malloc(things * sizeof(xRectangle));
+        origRects = xallocarray(things, sizeof(xRectangle));
         memcpy((char *) origRects, (char *) &stuff[1],
                things * sizeof(xRectangle));
         FOR_NSCREENS_FORWARD(j) {
@@ -1810,7 +1862,7 @@ PanoramiXPolyFillArc(ClientPtr client)
         return BadLength;
     narcs /= sizeof(xArc);
     if (narcs > 0) {
-        origArcs = malloc(narcs * sizeof(xArc));
+        origArcs = xallocarray(narcs, sizeof(xArc));
         memcpy((char *) origArcs, (char *) &stuff[1], narcs * sizeof(xArc));
         FOR_NSCREENS_FORWARD(j) {
 
@@ -1910,7 +1962,7 @@ PanoramiXGetImage(ClientPtr client)
     }
 
     rc = dixLookupResourceByClass((void **) &draw, stuff->drawable,
-                                  XRC_DRAWABLE, client, DixWriteAccess);
+                                  XRC_DRAWABLE, client, DixReadAccess);
     if (rc != Success)
         return (rc == BadValue) ? BadDrawable : rc;
 
@@ -1959,6 +2011,12 @@ PanoramiXGetImage(ClientPtr client)
         if (rc != Success)
             return rc;
     }
+    FOR_NSCREENS_FORWARD(i) {
+        drawables[i]->pScreen->SourceValidate(drawables[i], 0, 0,
+                                              drawables[i]->width,
+                                              drawables[i]->height,
+                                              IncludeInferiors);
+    }
 
     xgi = (xGetImageReply) {
         .type = X_Reply,
@@ -1990,8 +2048,7 @@ PanoramiXGetImage(ClientPtr client)
         if (linesPerBuf > h)
             linesPerBuf = h;
     }
-    length = linesPerBuf * widthBytesLine;
-    if (!(pBuf = malloc(length)))
+    if (!(pBuf = xallocarray(linesPerBuf, widthBytesLine)))
         return BadAlloc;
 
     WriteReplyToClient(client, sizeof(xGetImageReply), &xgi);

@@ -46,7 +46,7 @@ from The Open Group.
 
 #include <rpc/rpc.h>
 
-#ifdef sun
+#ifdef __sun
 /* <rpc/auth.h> only includes this if _KERNEL is #defined... */
 extern bool_t xdr_opaque_auth(XDR *, struct opaque_auth *);
 #endif
@@ -66,6 +66,10 @@ authdes_ezdecode(const char *inmsg, int len)
     SVCXPRT xprt;
 
     temp_inmsg = malloc(len);
+    if (temp_inmsg == NULL) {
+        why = AUTH_FAILED; /* generic error, since there is no AUTH_BADALLOC */
+        return NULL;
+    }
     memmove(temp_inmsg, inmsg, len);
 
     memset((char *) &msg, 0, sizeof(msg));
@@ -169,12 +173,6 @@ SecureRPCReset(void)
 {
     rpc_id = (XID) ~0L;
     return 1;
-}
-
-_X_HIDDEN XID
-SecureRPCToID(unsigned short data_length, char *data)
-{
-    return rpc_id;
 }
 
 _X_HIDDEN int

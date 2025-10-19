@@ -37,11 +37,9 @@
  * Local function prototypes
  */
 
-#ifdef XWIN_MULTIWINDOW
 static wBOOL CALLBACK winRedrawAllProcShadowGDI(HWND hwnd, LPARAM lParam);
 
 static wBOOL CALLBACK winRedrawDamagedWindowShadowGDI(HWND hwnd, LPARAM lParam);
-#endif
 
 static Bool
  winAllocateFBShadowGDI(ScreenPtr pScreen);
@@ -121,7 +119,7 @@ winQueryScreenDIBFormat(ScreenPtr pScreen, BITMAPINFOHEADER * pbmih)
     pdw = (DWORD *) ((CARD8 *) pbmih + sizeof(BITMAPINFOHEADER));
 
     winDebug("winQueryScreenDIBFormat - First call masks: %08x %08x %08x\n",
-             pdw[0], pdw[1], pdw[2]);
+             (unsigned int)pdw[0], (unsigned int)pdw[1], (unsigned int)pdw[2]);
 #endif
 
     /* Get optimal color table, or the optimal bitfields */
@@ -155,7 +153,7 @@ winQueryRGBBitsAndMasks(ScreenPtr pScreen)
 
     /* Color masks for 8 bpp are standardized */
     if (GetDeviceCaps(pScreenPriv->hdcScreen, RASTERCAPS) & RC_PALETTE) {
-        /* 
+        /*
          * RGB BPP for 8 bit palletes is always 8
          * and the color masks are always 0.
          */
@@ -197,12 +195,12 @@ winQueryRGBBitsAndMasks(ScreenPtr pScreen)
 
 #if CYGDEBUG
         winDebug("%s - Masks: %08x %08x %08x\n", __FUNCTION__,
-                 pdw[0], pdw[1], pdw[2]);
+                 (unsigned int)pdw[0], (unsigned int)pdw[1], (unsigned int)pdw[2]);
         winDebug("%s - Bitmap: %dx%d %d bpp %d planes\n", __FUNCTION__,
-                 pbmih->biWidth, pbmih->biHeight, pbmih->biBitCount,
+                 (int)pbmih->biWidth, (int)pbmih->biHeight, pbmih->biBitCount,
                  pbmih->biPlanes);
-        winDebug("%s - Compression: %d %s\n", __FUNCTION__,
-                 pbmih->biCompression,
+        winDebug("%s - Compression: %u %s\n", __FUNCTION__,
+                 (unsigned int)pbmih->biCompression,
                  (pbmih->biCompression ==
                   BI_RGB ? "(BI_RGB)" : (pbmih->biCompression ==
                                          BI_RLE8 ? "(BI_RLE8)" : (pbmih->
@@ -263,7 +261,6 @@ winQueryRGBBitsAndMasks(ScreenPtr pScreen)
     return fReturn;
 }
 
-#ifdef XWIN_MULTIWINDOW
 /*
  * Redraw all ---?
  */
@@ -309,7 +306,6 @@ winRedrawDamagedWindowShadowGDI(HWND hwnd, LPARAM lParam)
     }
     return TRUE;
 }
-#endif
 
 /*
  * Allocate a DIB for the shadow framebuffer GDI server
@@ -381,7 +377,7 @@ winAllocateFBShadowGDI(ScreenPtr pScreen)
 #if 0
         return FALSE;
 #else
-        /* ago: ignore this error. The blit fails with wine, but does not 
+        /* ago: ignore this error. The blit fails with wine, but does not
          * cause any problems later. */
 
         fReturn = TRUE;
@@ -403,11 +399,9 @@ winAllocateFBShadowGDI(ScreenPtr pScreen)
              (int) pScreenInfo->dwStride);
 #endif
 
-#ifdef XWIN_MULTIWINDOW
     /* Redraw all windows */
     if (pScreenInfo->fMultiWindow)
         EnumThreadWindows(g_dwCurrentThreadID, winRedrawAllProcShadowGDI, 0);
-#endif
 
     return fReturn;
 }
@@ -434,7 +428,7 @@ winShadowUpdateGDI(ScreenPtr pScreen, shadowBufPtr pBuf)
 {
     winScreenPriv(pScreen);
     winScreenInfo *pScreenInfo = pScreenPriv->pScreenInfo;
-    RegionPtr damage = shadowDamage(pBuf);
+    RegionPtr damage = DamageRegion(pBuf->pDamage);
     DWORD dwBox = RegionNumRects(damage);
     BoxPtr pBox = RegionRects(damage);
     int x, y, w, h;
@@ -474,7 +468,7 @@ winShadowUpdateGDI(ScreenPtr pScreen, shadowBufPtr pBuf)
 
     /*
      * Handle small regions with multiple blits,
-     * handle large regions by creating a clipping region and 
+     * handle large regions by creating a clipping region and
      * doing a single blit constrained to that clipping region.
      */
     if (!pScreenInfo->fMultiWindow &&
@@ -525,13 +519,11 @@ winShadowUpdateGDI(ScreenPtr pScreen, shadowBufPtr pBuf)
         SelectClipRgn(pScreenPriv->hdcScreen, NULL);
     }
 
-#ifdef XWIN_MULTIWINDOW
     /* Redraw all multiwindow windows */
     if (pScreenInfo->fMultiWindow)
         EnumThreadWindows(g_dwCurrentThreadID,
                           winRedrawDamagedWindowShadowGDI,
                           (LPARAM) pBoxExtents);
-#endif
 }
 
 static Bool
@@ -576,7 +568,7 @@ winCloseScreenShadowGDI(ScreenPtr pScreen)
 {
     winScreenPriv(pScreen);
     winScreenInfo *pScreenInfo = pScreenPriv->pScreenInfo;
-    Bool fReturn;
+    Bool fReturn = TRUE;
 
 #if CYGDEBUG
     winDebug("winCloseScreenShadowGDI - Freeing screen resources\n");
@@ -618,10 +610,8 @@ winCloseScreenShadowGDI(ScreenPtr pScreen)
         pScreenPriv->hwndScreen = NULL;
     }
 
-#if defined(XWIN_CLIPBOARD) || defined(XWIN_MULTIWINDOW)
     /* Destroy the thread startup mutex */
     pthread_mutex_destroy(&pScreenPriv->pmServerStarted);
-#endif
 
     /* Invalidate our screeninfo's pointer to the screen */
     pScreenInfo->pScreen = NULL;
@@ -634,7 +624,7 @@ winCloseScreenShadowGDI(ScreenPtr pScreen)
 
 /*
  * Tell mi what sort of visuals we need.
- * 
+ *
  * Generally we only need one visual, as our screen can only
  * handle one format at a time, I believe.  You may want
  * to verify that last sentence.
@@ -778,12 +768,10 @@ winBltExposedRegionsShadowGDI(ScreenPtr pScreen)
     /* EndPaint frees the DC */
     EndPaint(pScreenPriv->hwndScreen, &ps);
 
-#ifdef XWIN_MULTIWINDOW
     /* Redraw all windows */
     if (pScreenInfo->fMultiWindow)
         EnumThreadWindows(g_dwCurrentThreadID, winRedrawAllProcShadowGDI,
                           (LPARAM) pScreenPriv->hwndScreen);
-#endif
 
     return TRUE;
 }
@@ -815,7 +803,7 @@ winActivateAppShadowGDI(ScreenPtr pScreen)
      */
     if (pScreenPriv->fActive && pScreenInfo->fFullScreen) {
         /*
-         * Activating, attempt to bring our window 
+         * Activating, attempt to bring our window
          * to the top of the display
          */
         ShowWindow(pScreenPriv->hwndScreen, SW_RESTORE);
@@ -847,11 +835,9 @@ winRedrawScreenShadowGDI(ScreenPtr pScreen)
            pScreenInfo->dwWidth, pScreenInfo->dwHeight,
            pScreenPriv->hdcShadow, 0, 0, SRCCOPY);
 
-#ifdef XWIN_MULTIWINDOW
     /* Redraw all windows */
     if (pScreenInfo->fMultiWindow)
         EnumThreadWindows(g_dwCurrentThreadID, winRedrawAllProcShadowGDI, 0);
-#endif
 
     return TRUE;
 }
@@ -946,11 +932,9 @@ winInstallColormapShadowGDI(ColormapPtr pColormap)
     /* Save a pointer to the newly installed colormap */
     pScreenPriv->pcmapInstalled = pColormap;
 
-#ifdef XWIN_MULTIWINDOW
     /* Redraw all windows */
     if (pScreenInfo->fMultiWindow)
         EnumThreadWindows(g_dwCurrentThreadID, winRedrawAllProcShadowGDI, 0);
-#endif
 
     return TRUE;
 }
@@ -1143,16 +1127,8 @@ winSetEngineFunctionsShadowGDI(ScreenPtr pScreen)
     pScreenPriv->pwinStoreColors = winStoreColorsShadowGDI;
     pScreenPriv->pwinCreateColormap = winCreateColormapShadowGDI;
     pScreenPriv->pwinDestroyColormap = winDestroyColormapShadowGDI;
-    pScreenPriv->pwinHotKeyAltTab =
-        (winHotKeyAltTabProcPtr) (void (*)(void)) NoopDDA;
-    pScreenPriv->pwinCreatePrimarySurface =
-        (winCreatePrimarySurfaceProcPtr) (void (*)(void)) NoopDDA;
-    pScreenPriv->pwinReleasePrimarySurface =
-        (winReleasePrimarySurfaceProcPtr) (void (*)(void)) NoopDDA;
-#ifdef XWIN_MULTIWINDOW
-    pScreenPriv->pwinFinishCreateWindowsWindow =
-        (winFinishCreateWindowsWindowProcPtr) (void (*)(void)) NoopDDA;
-#endif
+    pScreenPriv->pwinCreatePrimarySurface = NULL;
+    pScreenPriv->pwinReleasePrimarySurface = NULL;
 
     return TRUE;
 }

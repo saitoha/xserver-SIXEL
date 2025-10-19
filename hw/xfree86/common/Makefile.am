@@ -14,11 +14,6 @@ XVSOURCES = xf86xv.c xf86xvmc.c
 XVSDKINCS = xf86xv.h xf86xvmc.h xf86xvpriv.h
 endif
 
-if XF86VIDMODE
-XF86VMODESOURCES = xf86vmode.c
-XF86VMODE_SDK = vidmodeproc.h
-endif
-
 if DGA
 DGASOURCES = xf86DGA.c
 DGA_SDK = dgaproc.h
@@ -63,7 +58,8 @@ sdk_HEADERS = compiler.h fourcc.h xf86.h xf86Module.h xf86Opt.h \
               xf86PciInfo.h xf86Priv.h xf86Privstr.h \
               xf86cmap.h xf86fbman.h xf86str.h xf86Xinput.h xisb.h \
               $(XVSDKINCS) $(XF86VMODE_SDK) $(DGA_SDK) xorgVersion.h \
-              xf86sbusBus.h xf86VGAarbiter.h xf86Optionstr.h xf86platformBus.h \
+              xf86sbusBus.h xf86VGAarbiter.h xf86Optionstr.h \
+	      xf86platformBus.h xf86MatchDrivers.h \
 	      xaarop.h
 
 DISTCLEANFILES = xf86Build.h
@@ -72,7 +68,6 @@ CLEANFILES = $(BUILT_SOURCES)
 EXTRA_DIST = \
 	compiler.h \
 	fourcc.h \
-	vidmodeproc.h \
 	xf86.h \
 	xf86Bus.h \
 	xf86Config.h \
@@ -101,6 +96,10 @@ EXTRA_DIST = \
 
 if LNXACPI
 XORG_CFLAGS += -DHAVE_ACPI
+endif
+
+if NEED_DBUS
+XORG_CFLAGS += $(DBUS_CFLAGS)
 endif
 
 AM_CFLAGS = $(DIX_CFLAGS) $(XORG_CFLAGS)

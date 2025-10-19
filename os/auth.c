@@ -42,8 +42,12 @@ from The Open Group.
 #include   "dixstruct.h"
 #include   <sys/types.h>
 #include   <sys/stat.h>
+#include   <errno.h>
 #ifdef WIN32
 #include    <X11/Xw32defs.h>
+#endif
+#ifdef HAVE_LIBBSD
+#include   <bsd/stdlib.h>       /* for arc4random_buf() */
 #endif
 
 struct protocol {
@@ -52,7 +56,6 @@ struct protocol {
     AuthAddCFunc Add;           /* new authorization data */
     AuthCheckFunc Check;        /* verify client authorization data */
     AuthRstCFunc Reset;         /* delete all authorization data entries */
-    AuthToIDFunc ToID;          /* convert cookie to ID */
     AuthFromIDFunc FromID;      /* convert ID to cookie */
     AuthRemCFunc Remove;        /* remove a specific cookie */
 #ifdef XCSECURITY
@@ -63,7 +66,7 @@ struct protocol {
 static struct protocol protocols[] = {
     {(unsigned short) 18, "MIT-MAGIC-COOKIE-1",
      MitAddCookie, MitCheckCookie, MitResetCookie,
-     MitToID, MitFromID, MitRemoveCookie,
+     MitFromID, MitRemoveCookie,
 #ifdef XCSECURITY
      MitGenerateCookie
 #endif
@@ -71,7 +74,7 @@ static struct protocol protocols[] = {
 #ifdef HASXDMAUTH
     {(unsigned short) 19, "XDM-AUTHORIZATION-1",
      XdmAddCookie, XdmCheckCookie, XdmResetCookie,
-     XdmToID, XdmFromID, XdmRemoveCookie,
+     XdmFromID, XdmRemoveCookie,
 #ifdef XCSECURITY
      NULL
 #endif
@@ -80,7 +83,7 @@ static struct protocol protocols[] = {
 #ifdef SECURE_RPC
     {(unsigned short) 9, "SUN-DES-1",
      SecureRPCAdd, SecureRPCCheck, SecureRPCReset,
-     SecureRPCToID, SecureRPCFromID, SecureRPCRemove,
+     SecureRPCFromID, SecureRPCRemove,
 #ifdef XCSECURITY
      NULL
 #endif
@@ -88,8 +91,7 @@ static struct protocol protocols[] = {
 #endif
 };
 
-#define NUM_AUTHORIZATION  (sizeof (protocols) /\
-			     sizeof (struct protocol))
+#define NUM_AUTHORIZATION  ARRAY_SIZE(protocols)
 
 /*
  * Initialize all classes of authorization by reading the
@@ -118,9 +120,15 @@ LoadAuthorization(void)
     if (!authorization_file)
         return 0;
 
+    errno = 0;
     f = Fopen(authorization_file, "r");
-    if (!f)
+    if (!f) {
+        LogMessageVerb(X_ERROR, 0,
+                       "Failed to open authorization file \"%s\": %s\n",
+                       authorization_file,
+                       errno != 0 ? strerror(errno) : "Unknown error");
         return -1;
+    }
 
     while ((auth = XauReadAuth(f)) != 0) {
         for (i = 0; i < NUM_AUTHORIZATION; i++) {
@@ -181,11 +189,11 @@ CheckAuthorization(unsigned int name_length,
 
         /*
          * If the authorization file has at least one entry for this server,
-         * disable local host access. (loadauth > 0)
+         * disable local access. (loadauth > 0)
          *
          * If there are zero entries (either initially or when the
          * authorization file is later reloaded), or if a valid
-         * authorization file was never loaded, enable local host access.
+         * authorization file was never loaded, enable local access.
          * (loadauth == 0 || !loaded)
          *
          * If the authorization file was loaded initially (with valid
@@ -194,11 +202,11 @@ CheckAuthorization(unsigned int name_length,
          */
 
         if (loadauth > 0) {
-            DisableLocalHost(); /* got at least one */
+            DisableLocalAccess(); /* got at least one */
             loaded = TRUE;
         }
         else if (loadauth == 0 || !loaded)
-            EnableLocalHost();
+            EnableLocalAccess();
     }
     if (name_length) {
         for (i = 0; i < NUM_AUTHORIZATION; i++) {
@@ -300,14 +308,18 @@ GenerateAuthorization(unsigned name_length,
     return -1;
 }
 
+#endif                          /* XCSECURITY */
+
 void
 GenerateRandomData(int len, char *buf)
 {
+#ifdef HAVE_ARC4RANDOM_BUF
+    arc4random_buf(buf, len);
+#else
     int fd;
 
     fd = open("/dev/urandom", O_RDONLY);
     read(fd, buf, len);
     close(fd);
+#endif
 }
-
-#endif                          /* XCSECURITY */

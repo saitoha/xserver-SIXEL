@@ -21,7 +21,6 @@ libdix_la_SOURCES = 	\
 	events.c	\
 	eventconvert.c  \
 	extension.c	\
-	ffs.c		\
 	gc.c		\
 	getevents.c	\
 	globals.c	\
@@ -60,13 +59,13 @@ endif
 
 if SPECIAL_DTRACE_OBJECTS
 # Generate dtrace object code for probes in libdix
-dtrace-dix.o: $(top_srcdir)/dix/Xserver.d $(am_libdix_la_OBJECTS)
+dtrace-dix.o: $(top_srcdir)/dix/Xserver.d libdix.la
 	$(AM_V_GEN)$(DTRACE) -G -C -o $@ -s $(top_srcdir)/dix/Xserver.d $(am_libdix_la_OBJECTS:%.lo=.libs/%.o)
 
 noinst_PROGRAMS = dix.O
 
 dix_O_SOURCES =
-dix.O: dtrace-dix.o $(am_libdix_la_OBJECTS)
+dix.O: dtrace-dix.o libdix.la
 	$(AM_V_GEN)ld -r -o $@ $(am_libdix_la_OBJECTS:%.lo=.libs/%.o)
 endif
 

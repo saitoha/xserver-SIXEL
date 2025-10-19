@@ -611,7 +611,9 @@ CreatePointerBarrierClient(ClientPtr client,
         }
         pbd->deviceid = dev->id;
 
+        input_lock();
         xorg_list_add(&pbd->entry, &ret->per_device);
+        input_unlock();
     }
 
     ret->id = stuff->barrier;
@@ -626,7 +628,9 @@ CreatePointerBarrierClient(ClientPtr client,
         ret->barrier.directions &= ~(BarrierPositiveX | BarrierNegativeX);
     if (barrier_is_vertical(&ret->barrier))
         ret->barrier.directions &= ~(BarrierPositiveY | BarrierNegativeY);
+    input_lock();
     xorg_list_add(&ret->entry, &cs->barriers);
+    input_unlock();
 
     *client_out = ret;
     return Success;
@@ -689,7 +693,9 @@ BarrierFreeBarrier(void *data, XID id)
         mieqEnqueue(dev, (InternalEvent *) &ev);
     }
 
+    input_lock();
     xorg_list_del(&c->entry);
+    input_unlock();
 
     FreePointerBarrierClient(c);
     return Success;
@@ -709,7 +715,9 @@ static void add_master_func(void *res, XID id, void *devid)
     pbd = AllocBarrierDevice();
     pbd->deviceid = *deviceid;
 
+    input_lock();
     xorg_list_add(&pbd->entry, &barrier->per_device);
+    input_unlock();
 }
 
 static void remove_master_func(void *res, XID id, void *devid)
@@ -752,7 +760,9 @@ static void remove_master_func(void *res, XID id, void *devid)
         mieqEnqueue(dev, (InternalEvent *) &ev);
     }
 
+    input_lock();
     xorg_list_del(&pbd->entry);
+    input_unlock();
     free(pbd);
 }
 
@@ -823,17 +833,22 @@ XIDestroyPointerBarrier(ClientPtr client,
     return Success;
 }
 
-int
+int _X_COLD
 SProcXIBarrierReleasePointer(ClientPtr client)
 {
     xXIBarrierReleasePointerInfo *info;
     REQUEST(xXIBarrierReleasePointerReq);
     int i;
 
-    info = (xXIBarrierReleasePointerInfo*) &stuff[1];
-
     swaps(&stuff->length);
+    REQUEST_AT_LEAST_SIZE(xXIBarrierReleasePointerReq);
+
     swapl(&stuff->num_barriers);
+    if (stuff->num_barriers > UINT32_MAX / sizeof(xXIBarrierReleasePointerInfo))
+        return BadLength;
+    REQUEST_FIXED_SIZE(xXIBarrierReleasePointerReq, stuff->num_barriers * sizeof(xXIBarrierReleasePointerInfo));
+
+    info = (xXIBarrierReleasePointerInfo*) &stuff[1];
     for (i = 0; i < stuff->num_barriers; i++, info++) {
         swaps(&info->deviceid);
         swapl(&info->barrier);
@@ -854,6 +869,9 @@ ProcXIBarrierReleasePointer(ClientPtr client)
 
     REQUEST(xXIBarrierReleasePointerReq);
     REQUEST_AT_LEAST_SIZE(xXIBarrierReleasePointerReq);
+    if (stuff->num_barriers > UINT32_MAX / sizeof(xXIBarrierReleasePointerInfo))
+        return BadLength;
+    REQUEST_FIXED_SIZE(xXIBarrierReleasePointerReq, stuff->num_barriers * sizeof(xXIBarrierReleasePointerInfo));
 
     info = (xXIBarrierReleasePointerInfo*) &stuff[1];
     for (i = 0; i < stuff->num_barriers; i++, info++) {

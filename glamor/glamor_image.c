@@ -49,7 +49,7 @@ glamor_put_image_gl(DrawablePtr drawable, GCPtr gc, int depth, int x, int y,
     if (gc->alu != GXcopy)
         goto bail;
 
-    if (!glamor_pm_is_solid(&pixmap->drawable, gc->planemask))
+    if (!glamor_pm_is_solid(gc->depth, gc->planemask))
         goto bail;
 
     if (format == XYPixmap && drawable->depth == 1 && leftPad == 0)
@@ -88,7 +88,7 @@ static void
 glamor_put_image_bail(DrawablePtr drawable, GCPtr gc, int depth, int x, int y,
                       int w, int h, int leftPad, int format, char *bits)
 {
-    if (glamor_prepare_access(drawable, GLAMOR_ACCESS_RW))
+    if (glamor_prepare_access_box(drawable, GLAMOR_ACCESS_RW, x, y, w, h))
         fbPutImage(drawable, gc, depth, x, y, w, h, leftPad, format, bits);
     glamor_finish_access(drawable);
 }
@@ -100,19 +100,6 @@ glamor_put_image(DrawablePtr drawable, GCPtr gc, int depth, int x, int y,
     if (glamor_put_image_gl(drawable, gc, depth, x, y, w, h, leftPad, format, bits))
         return;
     glamor_put_image_bail(drawable, gc, depth, x, y, w, h, leftPad, format, bits);
-}
-
-Bool
-glamor_put_image_nf(DrawablePtr drawable, GCPtr gc, int depth, int x, int y,
-                    int w, int h, int leftPad, int format, char *bits)
-{
-    if (glamor_put_image_gl(drawable, gc, depth, x, y, w, h, leftPad, format, bits))
-        return TRUE;
-    if (glamor_ddx_fallback_check_pixmap(drawable) &&
-        glamor_ddx_fallback_check_gc(gc))
-        return FALSE;
-    glamor_put_image_bail(drawable, gc, depth, x, y, w, h, leftPad, format, bits);
-    return TRUE;
 }
 
 static Bool
@@ -129,7 +116,7 @@ glamor_get_image_gl(DrawablePtr drawable, int x, int y, int w, int h,
     if (!GLAMOR_PIXMAP_PRIV_HAS_FBO(pixmap_priv))
         goto bail;
 
-    if (format != ZPixmap || !glamor_pm_is_solid(drawable, plane_mask))
+    if (format != ZPixmap)
         goto bail;
 
     glamor_get_drawable_deltas(drawable, pixmap, &off_x, &off_y);
@@ -141,6 +128,16 @@ glamor_get_image_gl(DrawablePtr drawable, int x, int y, int w, int h,
                           drawable->x + off_x, drawable->y + off_y,
                           -x, -y,
                           (uint8_t *) d, byte_stride);
+
+    if (!glamor_pm_is_solid(drawable->depth, plane_mask)) {
+        FbStip pm = fbReplicatePixel(plane_mask, drawable->bitsPerPixel);
+        FbStip *dst = (void *)d;
+        uint32_t dstStride = byte_stride / sizeof(FbStip);
+
+        for (int i = 0; i < dstStride * h; i++)
+            dst[i] &= pm;
+    }
+
     return TRUE;
 bail:
     return FALSE;
@@ -150,7 +147,7 @@ static void
 glamor_get_image_bail(DrawablePtr drawable, int x, int y, int w, int h,
                       unsigned int format, unsigned long plane_mask, char *d)
 {
-    if (glamor_prepare_access(drawable, GLAMOR_ACCESS_RO))
+    if (glamor_prepare_access_box(drawable, GLAMOR_ACCESS_RO, x, y, w, h))
         fbGetImage(drawable, x, y, w, h, format, plane_mask, d);
     glamor_finish_access(drawable);
 }
@@ -162,18 +159,4 @@ glamor_get_image(DrawablePtr drawable, int x, int y, int w, int h,
     if (glamor_get_image_gl(drawable, x, y, w, h, format, plane_mask, d))
         return;
     glamor_get_image_bail(drawable, x, y, w, h, format, plane_mask, d);
-}
-
-Bool
-glamor_get_image_nf(DrawablePtr drawable, int x, int y, int w, int h,
-                    unsigned int format, unsigned long plane_mask, char *d)
-{
-    if (glamor_get_image_gl(drawable, x, y, w, h, format, plane_mask, d))
-        return TRUE;
-
-    if (glamor_ddx_fallback_check_pixmap(drawable))
-        return FALSE;
-
-    glamor_get_image_bail(drawable, x, y, w, h, format, plane_mask, d);
-    return TRUE;
 }

@@ -43,6 +43,8 @@
 #include "mi.h"
 #include "assert.h"
 
+#include "tests-common.h"
+
 /**
  * Init a device with axes.
  * Verify values set on the device.
@@ -228,7 +230,7 @@ dix_check_grab_values(void)
 static void
 dix_event_to_core(int type)
 {
-    DeviceEvent ev;
+    DeviceEvent ev = {};
     xEvent *core;
     int time;
     int x, y;
@@ -1358,12 +1360,74 @@ dix_valuator_mode(void)
 }
 
 static void
+dix_input_valuator_masks_unaccel(void)
+{
+    ValuatorMask *mask = NULL;
+    double x, ux;
+
+    /* set mask normally */
+    mask = valuator_mask_new(MAX_VALUATORS);
+    assert(!valuator_mask_has_unaccelerated(mask));
+    valuator_mask_set_double(mask, 0, 1.0);
+    assert(!valuator_mask_has_unaccelerated(mask));
+    valuator_mask_unset(mask, 0);
+    assert(!valuator_mask_has_unaccelerated(mask));
+
+    /* all unset, now set accel mask */
+    valuator_mask_set_unaccelerated(mask, 0, 1.0, 2.0);
+    assert(valuator_mask_has_unaccelerated(mask));
+    assert(valuator_mask_isset(mask, 0));
+    assert(!valuator_mask_isset(mask, 1));
+    assert(valuator_mask_get_accelerated(mask, 0) ==  1.0);
+    assert(valuator_mask_get_unaccelerated(mask, 0) ==  2.0);
+    assert(valuator_mask_fetch_unaccelerated(mask, 0, &x, &ux));
+    assert(x == 1.0);
+    assert(ux == 2.0);
+    x = 0xff;
+    ux = 0xfe;
+    assert(!valuator_mask_fetch_unaccelerated(mask, 1, &x, &ux));
+    assert(x == 0xff);
+    assert(ux == 0xfe);
+
+    /* all unset, now set normally again */
+    valuator_mask_unset(mask, 0);
+    assert(!valuator_mask_has_unaccelerated(mask));
+    assert(!valuator_mask_isset(mask, 0));
+    valuator_mask_set_double(mask, 0, 1.0);
+    assert(!valuator_mask_has_unaccelerated(mask));
+    valuator_mask_unset(mask, 0);
+    assert(!valuator_mask_has_unaccelerated(mask));
+
+    valuator_mask_zero(mask);
+    assert(!valuator_mask_has_unaccelerated(mask));
+
+    valuator_mask_set_unaccelerated(mask, 0, 1.0, 2.0);
+    valuator_mask_set_unaccelerated(mask, 1, 3.0, 4.5);
+    assert(valuator_mask_isset(mask, 0));
+    assert(valuator_mask_isset(mask, 1));
+    assert(!valuator_mask_isset(mask, 2));
+    assert(valuator_mask_has_unaccelerated(mask));
+    assert(valuator_mask_get_accelerated(mask, 0) == 1.0);
+    assert(valuator_mask_get_accelerated(mask, 1) == 3.0);
+    assert(valuator_mask_get_unaccelerated(mask, 0) == 2.0);
+    assert(valuator_mask_get_unaccelerated(mask, 1) == 4.5);
+    assert(valuator_mask_fetch_unaccelerated(mask, 0, &x, &ux));
+    assert(x == 1.0);
+    assert(ux == 2.0);
+    assert(valuator_mask_fetch_unaccelerated(mask, 1, &x, &ux));
+    assert(x == 3.0);
+    assert(ux == 4.5);
+
+    valuator_mask_free(&mask);
+}
+
+static void
 include_bit_test_macros(void)
 {
     uint8_t mask[9] = { 0 };
     int i;
 
-    for (i = 0; i < sizeof(mask) / sizeof(mask[0]); i++) {
+    for (i = 0; i < ARRAY_SIZE(mask); i++) {
         assert(BitIsOn(mask, i) == 0);
         SetBit(mask, i);
         assert(BitIsOn(mask, i) == 1);
@@ -1842,11 +1906,12 @@ dix_enqueue_events(void)
 }
 
 int
-main(int argc, char **argv)
+input_test(void)
 {
     dix_enqueue_events();
     dix_double_fp_conversion();
     dix_input_valuator_masks();
+    dix_input_valuator_masks_unaccel();
     dix_input_attributes();
     dix_init_valuators();
     dix_event_to_core_conversion();

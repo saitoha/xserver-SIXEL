@@ -7,6 +7,8 @@ XDMCP_SRCS = xdmcp.c
 XORG_SRCS = log.c
 BUSFAULT_SRCS = busfault.c
 
+XSERVER_POLL_SRCS=xserver_poll.c
+
 libos_la_SOURCES = 	\
 	WaitFor.c	\
 	access.c	\
@@ -14,11 +16,14 @@ libos_la_SOURCES = 	\
 	backtrace.c	\
 	client.c	\
 	connection.c	\
+	inputthread.c	\
 	io.c		\
 	mitauth.c	\
 	oscolor.c	\
 	osdep.h		\
 	osinit.c	\
+	ospoll.c	\
+	ospoll.h	\
 	utils.c		\
 	xdmauth.c	\
 	xsha1.c		\
@@ -29,6 +34,11 @@ libos_la_LIBADD = @SHA1_LIBS@ $(DLOPEN_LIBS) $(LTLIBOBJS)
 
 if SECURE_RPC
 libos_la_SOURCES += $(SECURERPC_SRCS)
+endif
+
+if POLL
+else
+libos_la_SOURCES += $(XSERVER_POLL_SRCS)
 endif
 
 if XDMCP
@@ -48,12 +58,12 @@ EXTRA_DIST = $(SECURERPC_SRCS) $(XDMCP_SRCS)
 
 if SPECIAL_DTRACE_OBJECTS
 # Generate dtrace object code for probes in libos & libdix
-dtrace.o: $(top_srcdir)/dix/Xserver.d $(am_libos_la_OBJECTS)
+dtrace.o: $(top_srcdir)/dix/Xserver.d libos.la
 	$(AM_V_GEN)$(DTRACE) -G -C -o $@ -s $(top_srcdir)/dix/Xserver.d .libs/*.o ../dix/.libs/*.o
 
 noinst_PROGRAMS = os.O
 
 os_O_SOURCES =
-os.O: dtrace.o $(am_libos_la_OBJECTS)
+os.O: dtrace.o libos.la
 	$(AM_V_GEN)ld -r -o $@ dtrace.o .libs/*.o
 endif

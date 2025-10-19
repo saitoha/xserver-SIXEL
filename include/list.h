@@ -117,7 +117,7 @@ struct xorg_list {
  * Example:
  * xorg_list_init(&bar->list_of_foos);
  *
- * @param The list to initialized.
+ * @param list The list to initialize
  */
 static inline void
 xorg_list_init(struct xorg_list *list)
@@ -211,7 +211,8 @@ xorg_list_del(struct xorg_list *entry)
  * Example:
  * xorg_list_is_empty(&bar->list_of_foos);
  *
- * @return True if the list contains one or more elements or False otherwise.
+ * @return True if the list is empty or False if the list contains one or more
+ * elements.
  */
 static inline int
 xorg_list_is_empty(struct xorg_list *head)
@@ -304,8 +305,9 @@ xorg_list_is_empty(struct xorg_list *head)
  * @param member Member name of the struct xorg_list in the list elements.
  *
  */
-#define xorg_list_for_each_entry(pos, head, member)				\
-    for (pos = __container_of((head)->next, pos, member);		\
+#define xorg_list_for_each_entry(pos, head, member)			\
+    for (pos = NULL,                                                    \
+         pos = __container_of((head)->next, pos, member);		\
 	 &pos->member != (head);					\
 	 pos = __container_of(pos->member.next, pos, member))
 
@@ -317,7 +319,8 @@ xorg_list_is_empty(struct xorg_list *head)
  * See xorg_list_for_each_entry for more details.
  */
 #define xorg_list_for_each_entry_safe(pos, tmp, head, member)		\
-    for (pos = __container_of((head)->next, pos, member),		\
+    for (pos = NULL,                                                    \
+         pos = __container_of((head)->next, pos, member),		\
 	 tmp = __container_of(pos->member.next, pos, member);		\
 	 &pos->member != (head);					\
 	 pos = tmp, tmp = __container_of(pos->member.next, tmp, member))

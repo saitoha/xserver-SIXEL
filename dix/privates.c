@@ -105,7 +105,6 @@ static const char *key_names[PRIVATE_LAST] = {
     [PRIVATE_CURSOR_BITS] = "CURSOR_BITS",
 
     /* extension privates */
-    [PRIVATE_DAMAGE] = "DAMAGE",
     [PRIVATE_GLYPH] = "GLYPH",
     [PRIVATE_GLYPHSET] = "GLYPHSET",
     [PRIVATE_PICTURE] = "PICTURE",
@@ -572,8 +571,6 @@ static const int offsets[] = {
     offsetof(ColormapRec, devPrivates), /* RT_COLORMAP */
 };
 
-#define NUM_OFFSETS	(sizeof (offsets) / sizeof (offsets[0]))
-
 int
 dixLookupPrivateOffset(RESTYPE type)
 {
@@ -588,7 +585,7 @@ dixLookupPrivateOffset(RESTYPE type)
             return offsets[RT_PIXMAP & TypeMask];
     }
     type = type & TypeMask;
-    if (type < NUM_OFFSETS)
+    if (type < ARRAY_SIZE(offsets))
         return offsets[type];
     return -1;
 }
@@ -642,6 +639,15 @@ dixRegisterScreenSpecificPrivateKey(ScreenPtr pScreen, DevPrivateKey key,
 void
 dixFreeScreenSpecificPrivates(ScreenPtr pScreen)
 {
+    DevPrivateType t;
+
+    for (t = PRIVATE_XSELINUX; t < PRIVATE_LAST; t++) {
+        DevPrivateKey key;
+
+        for (key = pScreen->screenSpecificPrivates[t].key; key; key = key->next) {
+            key->initialized = FALSE;
+        }
+    }
 }
 
 /* Initialize screen-specific privates in AddScreen */
@@ -773,4 +779,13 @@ dixResetPrivates(void)
         global_keys[t].created = 0;
         global_keys[t].allocated = 0;
     }
+}
+
+Bool
+dixPrivatesCreated(DevPrivateType type)
+{
+    if (global_keys[type].created)
+        return TRUE;
+    else
+        return FALSE;
 }

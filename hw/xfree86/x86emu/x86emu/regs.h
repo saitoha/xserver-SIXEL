@@ -109,7 +109,7 @@ struct i386_special_regs {
     u32 FLAGS;
 };
 
-/*  
+/*
  * Segment registers here represent the 16 bit quantities
  * CS, DS, ES, SS.
  */
@@ -158,14 +158,6 @@ struct i386_segment_regs {
 #define R_FLG spc.FLAGS
 
 /* special registers */
-#define R_SP  spc.SP.I16_reg.x_reg
-#define R_BP  spc.BP.I16_reg.x_reg
-#define R_SI  spc.SI.I16_reg.x_reg
-#define R_DI  spc.DI.I16_reg.x_reg
-#define R_IP  spc.IP.I16_reg.x_reg
-#define R_FLG spc.FLAGS
-
-/* special registers */
 #define R_ESP  spc.SP.I32_reg.e_reg
 #define R_EBP  spc.BP.I32_reg.e_reg
 #define R_ESI  spc.SI.I32_reg.e_reg
@@ -196,8 +188,8 @@ struct i386_segment_regs {
 #define F_ALWAYS_ON  (0x0002)   /* flag bits always on */
 
 /*
- * Define a mask for only those flag bits we will ever pass back 
- * (via PUSHF) 
+ * Define a mask for only those flag bits we will ever pass back
+ * (via PUSHF)
  */
 #define F_MSK (FB_CF|FB_PF|FB_AF|FB_ZF|FB_SF|FB_TF|FB_IF|FB_DF|FB_OF)
 
@@ -279,8 +271,8 @@ typedef struct {
      *  Delayed flag set        3 bits  (zero, signed, parity)
      *  reserved                6 bits
      *  interrupt #             8 bits  instruction raised interrupt
-     *  BIOS video segregs      4 bits  
-     *  Interrupt Pending       1 bits  
+     *  BIOS video segregs      4 bits
+     *  Interrupt Pending       1 bits
      *  Extern interrupt        1 bits
      *  Halted                  1 bits
      */

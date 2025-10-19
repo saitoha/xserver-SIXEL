@@ -1,4 +1,4 @@
-noinst_LTLIBRARIES = libXext.la libXextdpmsstubs.la
+noinst_LTLIBRARIES = libXext.la libXvidmode.la libhashtable.la
 
 AM_CFLAGS = $(DIX_CFLAGS)
 
@@ -6,7 +6,7 @@ if XORG
 sdk_HEADERS = xvdix.h xvmcext.h geext.h geint.h shmint.h syncsdk.h
 endif
 
-# Sources always included in libXextbuiltin.la & libXext.la
+# Sources always included in libXextbuiltin.la, libXext.la
 BUILTIN_SRCS =			\
 	bigreq.c		\
         geext.c			\
@@ -35,7 +35,7 @@ BUILTIN_SRCS  += $(XV_SRCS)
 endif
 
 # XResource extension: lets clients get data about per-client resource usage
-RES_SRCS = hashtable.c hashtable.h xres.c
+RES_SRCS = xres.c
 if RES
 BUILTIN_SRCS  += $(RES_SRCS)
 endif
@@ -95,8 +95,15 @@ endif
 
 libXext_la_SOURCES =		$(BUILTIN_SRCS)
 libXext_la_LIBADD =		$(BUILTIN_LIBS)
+if RES
+libXext_la_LIBADD += libhashtable.la
+endif
 
-libXextdpmsstubs_la_SOURCES = dpmsstubs.c
+# XVidMode extension
+libXvidmode_la_SOURCES = vidmode.c
+
+#Hashtable
+libhashtable_la_SOURCES = hashtable.c hashtable.h
 
 EXTRA_DIST = \
 	$(MITSHM_SRCS) \

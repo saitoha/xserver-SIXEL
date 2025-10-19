@@ -22,10 +22,6 @@
 
 #ifdef HAVE_XORG_CONFIG_H
 #include <xorg-config.h>
-#else
-#ifdef HAVE_CONFIG_H
-#include <config.h>
-#endif
 #endif
 
 #include "xf86.h"
@@ -60,7 +56,7 @@ xf86_dga_get_modes(ScreenPtr pScreen)
     if (!num)
         return FALSE;
 
-    modes = malloc(num * sizeof(DGAModeRec));
+    modes = xallocarray(num, sizeof(DGAModeRec));
     if (!modes)
         return FALSE;
 

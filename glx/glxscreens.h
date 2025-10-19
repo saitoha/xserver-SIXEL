@@ -35,9 +35,16 @@
  * Silicon Graphics, Inc.
  */
 
+#include "extension_string.h"
+#include "glxvndabi.h"
+
 typedef struct __GLXconfig __GLXconfig;
 struct __GLXconfig {
+    /* Management */
     __GLXconfig *next;
+#ifdef COMPOSITE
+    GLboolean duplicatedForComp;
+#endif
     GLuint doubleBufferMode;
     GLuint stereoMode;
 
@@ -56,7 +63,7 @@ struct __GLXconfig {
 
     /* GLX */
     GLint visualID;
-    GLint visualType;     /**< One of the GLX X visual types. (i.e., 
+    GLint visualType;     /**< One of the GLX X visual types. (i.e.,
 			   * \c GLX_TRUE_COLOR, etc.)
 			   */
 
@@ -76,7 +83,6 @@ struct __GLXconfig {
     /* SGIX_fbconfig / GLX 1.3 */
     GLint drawableType;
     GLint renderType;
-    GLint xRenderable;
     GLint fbconfigID;
 
     /* SGIX_pbuffer / GLX 1.3 */
@@ -140,19 +146,9 @@ struct __GLXscreen {
     GLint numVisuals;
 
     char *GLextensions;
-
     char *GLXextensions;
-
-    /**
-     * \name GLX version supported by this screen.
-     *
-     * Since the GLX version advertised by the server is for the whole server,
-     * the GLX protocol code uses the minimum version supported on all screens.
-     */
-    /*@{ */
-    unsigned GLXmajor;
-    unsigned GLXminor;
-    /*@} */
+    char *glvnd;
+    unsigned char glx_enable_bits[__GLX_EXT_BYTES];
 
     Bool (*CloseScreen) (ScreenPtr pScreen);
 };

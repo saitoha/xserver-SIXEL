@@ -36,6 +36,7 @@
 #endif
 
 #define GL_GLEXT_LEGACY
+#define GL_GLEXT_PROTOTYPES
 #include <GL/gl.h>
 #undef GL_ARB_imaging
 #undef GL_VERSION_1_3
@@ -45,6 +46,8 @@
 #include <os.h>
 #include "glwindows.h"
 #include <glx/glxserver.h>
+
+extern void *glXGetProcAddressARB(const char *);
 
 static HMODULE hMod = NULL;
 
@@ -103,7 +106,7 @@ int glWinSelectImplementation(int native)
 #define RESOLVED_PROC proc
 
 /* Include generated shims for direct linkage to GL functions which are in the ABI */
-#include "generated_gl_shim.c"
+#include "generated_gl_shim.ic"
 
 /*
   Special wrapper for glAddSwapHintRectWIN for copySubBuffers

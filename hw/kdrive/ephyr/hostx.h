@@ -1,8 +1,8 @@
 /*
  * Xephyr - A kdrive X server thats runs in a host X window.
  *          Authored by Matthew Allum <mallum@o-hand.com>
- * 
- * Copyright © 2004 Nokia 
+ *
+ * Copyright © 2004 Nokia
  *
  * Permission to use, copy, modify, distribute, and sell this software and its
  * documentation for any purpose is hereby granted without fee, provided that
@@ -29,6 +29,7 @@
 #include <X11/X.h>
 #include <X11/Xmd.h>
 #include <xcb/xcb.h>
+#include <xcb/render.h>
 #include "ephyr.h"
 
 #define EPHYR_WANT_DEBUG 0
@@ -41,11 +42,6 @@
 #endif
 
 typedef struct EphyrHostXVars EphyrHostXVars;
-
-typedef struct {
-    int minKeyCode;
-    int maxKeyCode;
-} EphyrKeySyms;
 
 typedef struct {
     VisualID visualid;
@@ -81,6 +77,9 @@ int
 
 void
  hostx_use_sw_cursor(void);
+
+xcb_cursor_t
+ hostx_get_empty_cursor(void);
 
 void
  hostx_get_output_geometry(const char *output,
@@ -137,7 +136,7 @@ hostx_get_visual_masks(KdScreenInfo *screen,
                        CARD32 *rmsk, CARD32 *gmsk, CARD32 *bmsk);
 void
 
-hostx_set_cmap_entry(unsigned char idx,
+hostx_set_cmap_entry(ScreenPtr pScreen, unsigned char idx,
                      unsigned char r, unsigned char g, unsigned char b);
 
 void *hostx_screen_init(KdScreenInfo *screen,
@@ -149,11 +148,20 @@ void
 hostx_paint_rect(KdScreenInfo *screen,
                  int sx, int sy, int dx, int dy, int width, int height);
 
+Bool
+hostx_load_keymap(KeySymsPtr keySyms, CARD8 *modmap, XkbControlsPtr controls);
+
 void
- hostx_load_keymap(void);
+hostx_size_set_from_configure(Bool);
 
 xcb_connection_t *
 hostx_get_xcbconn(void);
+
+xcb_generic_event_t *
+hostx_get_event(Bool queued_only);
+
+Bool
+hostx_has_queued_event(void);
 
 int
 hostx_get_screen(void);
@@ -178,20 +186,8 @@ int hostx_set_window_geometry(int a_win, EphyrBox * a_geo);
 int hostx_set_window_bounding_rectangles(int a_window,
                                          EphyrRect * a_rects, int a_num_rects);
 
-int host_has_extension(xcb_extension_t *extension);
+int hostx_has_extension(xcb_extension_t *extension);
 
-#ifdef XF86DRI
-int hostx_lookup_peer_window(void *a_local_window,
-                             int *a_host_peer /*out parameter */ );
-int
-
-hostx_allocate_resource_id_peer(int a_local_resource_id,
-                                int *a_remote_resource_id);
-int
- hostx_get_resource_id_peer(int a_local_resource_id, int *a_remote_resource_id);
-int hostx_has_dri(void);
-
-int hostx_has_glx(void);
-#endif                          /* XF86DRI */
+int hostx_get_fd(void);
 
 #endif /*_XLIBS_STUFF_H_*/

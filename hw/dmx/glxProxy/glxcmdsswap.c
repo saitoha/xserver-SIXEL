@@ -30,7 +30,6 @@
 
 #include "glxserver.h"
 #include "glxutil.h"
-#include <GL/glxtokens.h>
 #include <g_disptab.h>
 #include <pixmapstr.h>
 #include <windowstr.h>
@@ -38,8 +37,6 @@
 #include "glxcmds.h"
 #include "glxext.h"
 #include "glxvendor.h"
-
-extern int glxIsExtensionSupported(char *ext);
 
 int __glXSwapGetFBConfigsSGIX(__GLXclientState * cl, GLbyte * pc);
 
@@ -440,7 +437,7 @@ __glXSwapUseXFont(__GLXclientState * cl, GLbyte * pc)
 int
 __glXSwapQueryExtensionsString(__GLXclientState * cl, GLbyte * pc)
 {
-    xGLXQueryExtensionsStringReq *req = NULL;
+    xGLXQueryExtensionsStringReq *req = (xGLXQueryExtensionsStringReq *) pc;
 
     __GLX_DECLARE_SWAP_VARIABLES;
 

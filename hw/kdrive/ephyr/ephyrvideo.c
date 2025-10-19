@@ -1,8 +1,8 @@
 /*
  * Xephyr - A kdrive X server thats runs in a host X window.
  *          Authored by Matthew Allum <mallum@openedhand.com>
- * 
- * Copyright © 2007 OpenedHand Ltd 
+ *
+ * Copyright © 2007 OpenedHand Ltd
  *
  * Permission to use, copy, modify, distribute, and sell this software and its
  * documentation for any purpose is hereby granted without fee, provided that
@@ -26,8 +26,8 @@
  *    Dodji Seketeli <dodji@openedhand.com>
  */
 
-#ifdef HAVE_CONFIG_H
-#include <kdrive-config.h>
+#ifdef HAVE_DIX_CONFIG_H
+#include <dix-config.h>
 #endif
 #include <string.h>
 #include <X11/extensions/Xv.h>
@@ -223,6 +223,11 @@ ephyrInitVideo(ScreenPtr pScreen)
 
     if (screen->fb.bitsPerPixel == 8) {
         EPHYR_LOG_ERROR("8 bits depth not supported\n");
+        return FALSE;
+    }
+
+    if (!hostx_has_extension(&xcb_xv_id)) {
+        EPHYR_LOG_ERROR("Host has no XVideo extension\n");
         return FALSE;
     }
 
@@ -462,7 +467,7 @@ ephyrXVPrivQueryHostAdaptors(EphyrXVPriv * a_this)
 
     if (a_this->host_adaptors)
         a_this->num_adaptors = a_this->host_adaptors->num_adaptors;
-    if (a_this->num_adaptors < 0) {
+    if (a_this->num_adaptors <= 0) {
         EPHYR_LOG_ERROR("failed to get number of host adaptors\n");
         goto out;
     }

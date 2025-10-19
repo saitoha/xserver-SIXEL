@@ -40,8 +40,8 @@
 #include "x86emu/x86emui.h"
 #include <stdio.h>
 #include <string.h>
-#ifndef NO_SYS_HEADERS
 #include <stdarg.h>
+#ifndef NO_SYS_HEADERS
 #include <stdlib.h>
 #endif
 
@@ -103,11 +103,11 @@ disassemble_forward(u16 seg, u16 off, int n)
      * SINGLE_STEP(r,m); which disappear if DEBUG is not defined to
      * the preprocessor.  The TRACE_REGS macro expands to:
      *
-     * if (debug&DEBUG_DISASSEMBLE) 
+     * if (debug&DEBUG_DISASSEMBLE)
      *     {just_disassemble(); goto EndOfInstruction;}
      *     if (debug&DEBUG_TRACE) trace_regs(r,m);
      *
-     * ......  and at the last line of the routine. 
+     * ......  and at the last line of the routine.
      *
      * EndOfInstruction: end_instr();
      *
@@ -174,18 +174,14 @@ x86emu_inc_decoded_inst_len(int x)
 }
 
 void
-x86emu_decode_printf(const char *x)
+x86emu_decode_printf(const char *x, ...)
 {
-    sprintf(M.x86.decoded_buf + M.x86.enc_str_pos, "%s", x);
-    M.x86.enc_str_pos += strlen(x);
-}
-
-void
-x86emu_decode_printf2(const char *x, int y)
-{
+    va_list ap;
     char temp[100];
 
-    snprintf(temp, sizeof(temp), x, y);
+    va_start(ap, x);
+    vsnprintf(temp, sizeof(temp), x, ap);
+    va_end(ap);
     sprintf(M.x86.decoded_buf + M.x86.enc_str_pos, "%s", temp);
     M.x86.enc_str_pos += strlen(temp);
 }
@@ -233,9 +229,7 @@ X86EMU_dump_memory(u16 seg, u16 off, u32 amt)
     u32 start = off & 0xfffffff0;
     u32 end = (off + 16) & 0xfffffff0;
     u32 i;
-    u32 current;
 
-    current = start;
     while (end <= off + amt) {
         printk("%04x:%04x ", seg, start);
         for (i = start; i < off; i++)
@@ -261,8 +255,6 @@ x86emu_single_step(void)
     static int breakpoint;
     static int noDecode = 1;
 
-    char *p;
-
     if (DEBUG_BREAK()) {
         if (M.x86.saved_ip != breakpoint) {
             return;
@@ -279,7 +271,7 @@ x86emu_single_step(void)
     offset = M.x86.saved_ip;
     while (!done) {
         printk("-");
-        p = fgets(s, 1023, stdin);
+        (void)fgets(s, 1023, stdin);
         cmd = parse_line(s, ps, &ntok);
         switch (cmd) {
         case 'u':

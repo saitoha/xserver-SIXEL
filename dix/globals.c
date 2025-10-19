@@ -26,13 +26,13 @@ Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
 
                         All Rights Reserved
 
-Permission to use, copy, modify, and distribute this software and its 
-documentation for any purpose and without fee is hereby granted, 
+Permission to use, copy, modify, and distribute this software and its
+documentation for any purpose and without fee is hereby granted,
 provided that the above copyright notice appear in all copies and that
-both that copyright notice and this permission notice appear in 
+both that copyright notice and this permission notice appear in
 supporting documentation, and that the name of Digital not be
 used in advertising or publicity pertaining to distribution of the
-software without specific, written prior permission.  
+software without specific, written prior permission.
 
 DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
 ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
@@ -92,16 +92,6 @@ CARD32 ScreenSaverTime;
 CARD32 ScreenSaverInterval;
 int ScreenSaverBlanking;
 int ScreenSaverAllowExposures;
-
-#ifdef DPMSExtension
-CARD16 DPMSPowerLevel = 0;
-Bool DPMSDisabledSwitch = FALSE;
-Bool DPMSCapableFlag = FALSE;
-CARD32 DPMSStandbyTime;
-CARD32 DPMSSuspendTime;
-CARD32 DPMSOffTime;
-Bool DPMSEnabled;
-#endif
 
 CARD32 defaultScreenSaverTime = DEFAULT_SCREEN_SAVER_TIME;
 CARD32 defaultScreenSaverInterval = DEFAULT_SCREEN_SAVER_INTERVAL;

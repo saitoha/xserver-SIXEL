@@ -55,15 +55,14 @@
 #include "extinit.h"
 #include "opaque.h"
 
+#include "dmx.h"
 #include "dmxextension.h"
 #include <X11/extensions/dmxproto.h>
 #include <X11/extensions/dmx.h>
 #include "protocol-versions.h"
 
 #ifdef PANORAMIX
-#include "panoramiX.h"
-extern unsigned long XRT_WINDOW;
-extern int PanoramiXNumScreens;
+#include "panoramiXsrv.h"
 #endif
 
 static unsigned char DMXCode;
@@ -426,7 +425,7 @@ ProcDMXChangeScreensAttributes(ClientPtr client)
     if (!_DMXXineramaActive())
         goto noxinerama;
 
-    if (!(attribs = malloc(stuff->screenCount * sizeof(*attribs))))
+    if (!(attribs = xallocarray(stuff->screenCount, sizeof(*attribs))))
         return BadAlloc;
 
     for (i = 0; i < stuff->screenCount; i++) {
@@ -439,7 +438,7 @@ ProcDMXChangeScreensAttributes(ClientPtr client)
         value_list += count;
     }
 
-#if PANORAMIX
+#ifdef PANORAMIX
     status = dmxConfigureScreenWindows(stuff->screenCount,
                                        screen_list, attribs, &errorScreen);
 #endif
@@ -623,18 +622,18 @@ ProcDMXGetWindowAttributes(ClientPtr client)
 
     REQUEST_SIZE_MATCH(xDMXGetWindowAttributesReq);
 
-    if (!(screens = malloc(count * sizeof(*screens))))
+    if (!(screens = xallocarray(count, sizeof(*screens))))
         return BadAlloc;
-    if (!(windows = malloc(count * sizeof(*windows)))) {
+    if (!(windows = xallocarray(count, sizeof(*windows)))) {
         free(screens);
         return BadAlloc;
     }
-    if (!(pos = malloc(count * sizeof(*pos)))) {
+    if (!(pos = xallocarray(count, sizeof(*pos)))) {
         free(windows);
         free(screens);
         return BadAlloc;
     }
-    if (!(vis = malloc(count * sizeof(*vis)))) {
+    if (!(vis = xallocarray(count, sizeof(*vis)))) {
         free(pos);
         free(windows);
         free(screens);
@@ -749,7 +748,7 @@ ProcDMXChangeDesktopAttributes(ClientPtr client)
     dmxGetDesktopAttributes(&attr);
     dmxFetchDesktopAttributes(stuff->valueMask, &attr, value_list);
 
-#if PANORAMIX
+#ifdef PANORAMIX
     status = dmxConfigureDesktop(&attr);
 #endif
     if (status == BadValue)
@@ -968,7 +967,7 @@ ProcDMXDispatch(ClientPtr client)
     }
 }
 
-static int
+static int _X_COLD
 SProcDMXQueryVersion(ClientPtr client)
 {
     REQUEST(xDMXQueryVersionReq);
@@ -978,7 +977,7 @@ SProcDMXQueryVersion(ClientPtr client)
     return ProcDMXQueryVersion(client);
 }
 
-static int
+static int _X_COLD
 SProcDMXSync(ClientPtr client)
 {
     REQUEST(xDMXSyncReq);
@@ -988,7 +987,7 @@ SProcDMXSync(ClientPtr client)
     return ProcDMXSync(client);
 }
 
-static int
+static int _X_COLD
 SProcDMXForceWindowCreation(ClientPtr client)
 {
     REQUEST(xDMXForceWindowCreationReq);
@@ -999,7 +998,7 @@ SProcDMXForceWindowCreation(ClientPtr client)
     return ProcDMXForceWindowCreation(client);
 }
 
-static int
+static int _X_COLD
 SProcDMXGetScreenCount(ClientPtr client)
 {
     REQUEST(xDMXGetScreenCountReq);
@@ -1009,7 +1008,7 @@ SProcDMXGetScreenCount(ClientPtr client)
     return ProcDMXGetScreenCount(client);
 }
 
-static int
+static int _X_COLD
 SProcDMXGetScreenAttributes(ClientPtr client)
 {
     REQUEST(xDMXGetScreenAttributesReq);
@@ -1020,7 +1019,7 @@ SProcDMXGetScreenAttributes(ClientPtr client)
     return ProcDMXGetScreenAttributes(client);
 }
 
-static int
+static int _X_COLD
 SProcDMXChangeScreensAttributes(ClientPtr client)
 {
     REQUEST(xDMXChangeScreensAttributesReq);
@@ -1033,7 +1032,7 @@ SProcDMXChangeScreensAttributes(ClientPtr client)
     return ProcDMXGetScreenAttributes(client);
 }
 
-static int
+static int _X_COLD
 SProcDMXAddScreen(ClientPtr client)
 {
     int paddedLength;
@@ -1049,7 +1048,7 @@ SProcDMXAddScreen(ClientPtr client)
     return ProcDMXAddScreen(client);
 }
 
-static int
+static int _X_COLD
 SProcDMXRemoveScreen(ClientPtr client)
 {
     REQUEST(xDMXRemoveScreenReq);
@@ -1060,7 +1059,7 @@ SProcDMXRemoveScreen(ClientPtr client)
     return ProcDMXRemoveScreen(client);
 }
 
-static int
+static int _X_COLD
 SProcDMXGetWindowAttributes(ClientPtr client)
 {
     REQUEST(xDMXGetWindowAttributesReq);
@@ -1071,7 +1070,7 @@ SProcDMXGetWindowAttributes(ClientPtr client)
     return ProcDMXGetWindowAttributes(client);
 }
 
-static int
+static int _X_COLD
 SProcDMXGetDesktopAttributes(ClientPtr client)
 {
     REQUEST(xDMXGetDesktopAttributesReq);
@@ -1081,7 +1080,7 @@ SProcDMXGetDesktopAttributes(ClientPtr client)
     return ProcDMXGetDesktopAttributes(client);
 }
 
-static int
+static int _X_COLD
 SProcDMXChangeDesktopAttributes(ClientPtr client)
 {
     REQUEST(xDMXChangeDesktopAttributesReq);
@@ -1093,7 +1092,7 @@ SProcDMXChangeDesktopAttributes(ClientPtr client)
     return ProcDMXChangeDesktopAttributes(client);
 }
 
-static int
+static int _X_COLD
 SProcDMXGetInputCount(ClientPtr client)
 {
     REQUEST(xDMXGetInputCountReq);
@@ -1103,7 +1102,7 @@ SProcDMXGetInputCount(ClientPtr client)
     return ProcDMXGetInputCount(client);
 }
 
-static int
+static int _X_COLD
 SProcDMXGetInputAttributes(ClientPtr client)
 {
     REQUEST(xDMXGetInputAttributesReq);
@@ -1114,7 +1113,7 @@ SProcDMXGetInputAttributes(ClientPtr client)
     return ProcDMXGetInputAttributes(client);
 }
 
-static int
+static int _X_COLD
 SProcDMXAddInput(ClientPtr client)
 {
     int paddedLength;
@@ -1130,7 +1129,7 @@ SProcDMXAddInput(ClientPtr client)
     return ProcDMXAddInput(client);
 }
 
-static int
+static int _X_COLD
 SProcDMXRemoveInput(ClientPtr client)
 {
     REQUEST(xDMXRemoveInputReq);
@@ -1141,7 +1140,7 @@ SProcDMXRemoveInput(ClientPtr client)
     return ProcDMXRemoveInput(client);
 }
 
-static int
+static int _X_COLD
 SProcDMXDispatch(ClientPtr client)
 {
     REQUEST(xReq);

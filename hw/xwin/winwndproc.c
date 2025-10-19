@@ -42,6 +42,7 @@
 #include "winmsg.h"
 #include "winmonitors.h"
 #include "inputstr.h"
+#include "winclipboard/winclipboard.h"
 
 /*
  * Global variables
@@ -159,18 +160,13 @@ winWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
          * their own mode when they become active.
          */
         if (s_pScreenInfo->fFullScreen
-            && (s_pScreenInfo->dwEngine == WIN_SERVER_SHADOW_DD
-                || s_pScreenInfo->dwEngine == WIN_SERVER_SHADOW_DDNL
-#ifdef XWIN_PRIMARYFB
-                || s_pScreenInfo->dwEngine == WIN_SERVER_PRIMARY_DD
-#endif
-            )) {
+            && (s_pScreenInfo->dwEngine == WIN_SERVER_SHADOW_DDNL)) {
             break;
         }
 
         ErrorF("winWindowProc - WM_DISPLAYCHANGE - new width: %d "
                "new height: %d new bpp: %d\n",
-               LOWORD(lParam), HIWORD(lParam), wParam);
+               LOWORD(lParam), HIWORD(lParam), (int)wParam);
 
         /* 0 bpp has no defined meaning, ignore this message */
         if (wParam == 0)
@@ -187,12 +183,7 @@ winWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
          */
         if (s_pScreenInfo->dwBPP !=
             GetDeviceCaps(s_pScreenPriv->hdcScreen, BITSPIXEL)) {
-            if ((s_pScreenInfo->dwEngine == WIN_SERVER_SHADOW_DD ||
-                 s_pScreenInfo->dwEngine == WIN_SERVER_SHADOW_DDNL
-#ifdef XWIN_PRIMARYFB
-                 || s_pScreenInfo->dwEngine == WIN_SERVER_PRIMARY_DD
-#endif
-                )) {
+            if (s_pScreenInfo->dwEngine == WIN_SERVER_SHADOW_DDNL) {
                 /* Cannot display the visual until the depth is restored */
                 ErrorF("winWindowProc - Disruptive change in depth\n");
 
@@ -238,13 +229,11 @@ winWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
                                                                     ||
                                                                     s_pScreenInfo->
                                                                     fRootless
-#ifdef XWIN_MULTIWINDOW
                                                                     ||
                                                                     s_pScreenInfo->
                                                                     fMultiWindow
-#endif
                 )) {
-                DWORD dwWidth, dwHeight;
+                DWORD dwWidth = 0, dwHeight = 0;
 
                 if (s_pScreenInfo->fMultipleMonitors) {
                     /* resize to new virtual desktop size */
@@ -280,8 +269,9 @@ winWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
                  */
 
                 /* Set screen size to match new size, if it is different to current */
-                if ((s_pScreenInfo->dwWidth != dwWidth) ||
-                    (s_pScreenInfo->dwHeight != dwHeight)) {
+                if (((dwWidth != 0) && (dwHeight != 0)) &&
+                    ((s_pScreenInfo->dwWidth != dwWidth) ||
+                     (s_pScreenInfo->dwHeight != dwHeight))) {
                     winDoRandRScreenSetSize(s_pScreen,
                                             dwWidth,
                                             dwHeight,
@@ -297,22 +287,16 @@ winWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
                  * the display dimensions change.
                  */
 
-                /*
-                 * NOTE: The non-DirectDraw engines set the ReleasePrimarySurface
-                 * and CreatePrimarySurface function pointers to point
-                 * to the no operation function, NoopDDA.  This allows us
-                 * to blindly call these functions, even if they are not
-                 * relevant to the current engine (e.g., Shadow GDI).
-                 */
-
                 winDebug
                     ("winWindowProc - WM_DISPLAYCHANGE - Releasing and recreating primary surface\n");
 
                 /* Release the old primary surface */
-                (*s_pScreenPriv->pwinReleasePrimarySurface) (s_pScreen);
+                if (*s_pScreenPriv->pwinReleasePrimarySurface)
+                    (*s_pScreenPriv->pwinReleasePrimarySurface) (s_pScreen);
 
                 /* Create the new primary surface */
-                (*s_pScreenPriv->pwinCreatePrimarySurface) (s_pScreen);
+                if (*s_pScreenPriv->pwinCreatePrimarySurface)
+                    (*s_pScreenPriv->pwinCreatePrimarySurface) (s_pScreen);
             }
         }
 
@@ -329,15 +313,13 @@ winWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 #endif
 
         /* Break if we do not allow resizing */
-        if ((s_pScreenInfo->iResizeMode == notAllowed)
+        if ((s_pScreenInfo->iResizeMode == resizeNotAllowed)
             || !s_pScreenInfo->fDecoration
 #ifdef XWIN_MULTIWINDOWEXTWM
             || s_pScreenInfo->fMWExtWM
 #endif
             || s_pScreenInfo->fRootless
-#ifdef XWIN_MULTIWINDOW
             || s_pScreenInfo->fMultiWindow
-#endif
             || s_pScreenInfo->fFullScreen)
             break;
 
@@ -408,7 +390,7 @@ winWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
         SetScrollInfo(hwnd, SB_VERT, &si, TRUE);
 
         /*
-         * NOTE: Scrollbars may have moved if they were at the 
+         * NOTE: Scrollbars may have moved if they were at the
          * far right/bottom, so we query their current position.
          */
 
@@ -626,7 +608,7 @@ winWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
         int iBorderHeight, iBorderWidth;
 
 #if CYGDEBUG
-        winDebug("winWindowProc - WM_GETMINMAXINFO - pScreenInfo: %08x\n",
+        winDebug("winWindowProc - WM_GETMINMAXINFO - pScreenInfo: %p\n",
                  s_pScreenInfo);
 #endif
 
@@ -638,9 +620,7 @@ winWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
             || s_pScreenInfo->fMWExtWM
 #endif
             || s_pScreenInfo->fRootless
-#ifdef XWIN_MULTIWINDOW
             || s_pScreenInfo->fMultiWindow
-#endif
             )
             break;
 
@@ -1058,12 +1038,12 @@ winWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
         if (winIsFakeCtrl_L(message, wParam, lParam))
             return 0;
 
-        /* 
+        /*
          * Discard presses generated from Windows auto-repeat
          */
         if (lParam & (1 << 30)) {
             switch (wParam) {
-                /* ago: Pressing LControl while RControl is pressed is 
+                /* ago: Pressing LControl while RControl is pressed is
                  * Indicated as repeat. Fix this!
                  */
             case VK_CONTROL:
@@ -1112,14 +1092,6 @@ winWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
         /* Release all pressed shift keys */
         if (wParam == VK_SHIFT)
             winFixShiftKeys(iScanCode);
-        return 0;
-
-    case WM_HOTKEY:
-        if (s_pScreenPriv == NULL)
-            break;
-
-        /* Call the engine-specific hot key handler */
-        (*s_pScreenPriv->pwinHotKeyAltTab) (s_pScreen);
         return 0;
 
     case WM_ACTIVATE:
@@ -1188,10 +1160,8 @@ winWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
             ShowCursor(TRUE);
         }
 
-#ifdef XWIN_CLIPBOARD
         /* Make sure the clipboard chain is ok. */
         winFixClipboardChain();
-#endif
 
         /* Call engine specific screen activation/deactivation function */
         (*s_pScreenPriv->pwinActivateApp) (s_pScreen);
@@ -1199,7 +1169,7 @@ winWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 #ifdef XWIN_MULTIWINDOWEXTWM
         if (s_pScreenPriv->fActive) {
             /* Restack all window unless using built-in wm. */
-            if (s_pScreenInfo->fInternalWM && s_pScreenInfo->fAnotherWMRunning)
+            if (s_pScreenInfo->fMWExtWM)
                 winMWExtWMRestackWindows(s_pScreen);
         }
 #endif
@@ -1213,7 +1183,6 @@ winWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
             winDisplayExitDialog(s_pScreenPriv);
             return 0;
 
-#ifdef XWIN_MULTIWINDOW
         case ID_APP_HIDE_ROOT:
             if (s_pScreenPriv->fRootWindowShown)
                 ShowWindow(s_pScreenPriv->hwndScreen, SW_HIDE);
@@ -1221,7 +1190,10 @@ winWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
                 ShowWindow(s_pScreenPriv->hwndScreen, SW_SHOW);
             s_pScreenPriv->fRootWindowShown = !s_pScreenPriv->fRootWindowShown;
             return 0;
-#endif
+
+        case ID_APP_MONITOR_PRIMARY:
+            fPrimarySelection = !fPrimarySelection;
+            return 0;
 
         case ID_APP_ABOUT:
             /* Display the About box */
@@ -1230,17 +1202,15 @@ winWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 
         default:
             /* It's probably one of the custom menus... */
-            if (HandleCustomWM_COMMAND(0, LOWORD(wParam)))
+            if (HandleCustomWM_COMMAND(0, LOWORD(wParam), s_pScreenPriv))
                 return 0;
         }
         break;
 
     case WM_GIVEUP:
         /* Tell X that we are giving up */
-#ifdef XWIN_MULTIWINDOW
         if (s_pScreenInfo->fMultiWindow)
             winDeinitMultiWindowWM();
-#endif
         GiveUp(0);
         return 0;
 
@@ -1256,28 +1226,6 @@ winWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
             return TRUE;
         }
         break;
-
-#ifdef XWIN_MULTIWINDOWEXTWM
-    case WM_MANAGE:
-        ErrorF("winWindowProc - WM_MANAGE\n");
-        s_pScreenInfo->fAnotherWMRunning = FALSE;
-
-        if (s_pScreenInfo->fInternalWM) {
-            EnumThreadWindows(g_dwCurrentThreadID, winMWExtWMDecorateWindow, 0);
-            //RootlessRepositionWindows (s_pScreen);
-        }
-        break;
-
-    case WM_UNMANAGE:
-        ErrorF("winWindowProc - WM_UNMANAGE\n");
-        s_pScreenInfo->fAnotherWMRunning = TRUE;
-
-        if (s_pScreenInfo->fInternalWM) {
-            EnumThreadWindows(g_dwCurrentThreadID, winMWExtWMDecorateWindow, 0);
-            winMWExtWMRestackWindows(s_pScreen);
-        }
-        break;
-#endif
 
     default:
         if (message == s_uTaskbarRestart) {

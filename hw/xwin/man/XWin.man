@@ -1,4 +1,4 @@
-.TH XWIN 1 __vendorversion__
+.TH XWIN 1 @vendorversion@
 .SH NAME
 XWin \- X Server for the Cygwin environment on Microsoft Windows
 
@@ -76,6 +76,9 @@ preceeding \fB\-screen\fP parameter.
 .B \-[no]multimonitors or \-[no]multiplemonitors
 Create a screen 0 that covers all monitors [the primary monitor] on a system with
 multiple monitors.
+Fake XINERAMA data is created describing the individual monitors,
+(This is similar to the 'merged framebuffer' or 'pseudo-xinerama' mode provided by
+some drivers for the xorg X server).
 This option is currently enabled by default in \fB\-multiwindow\fP mode.
 .TP 8
 .B "\-screen \fIscreen_number\fP [\fIW\fP \fIH\fP [\fIX\fP \fIY\fP] | [[\fIW\fPx\fIH\fP[+\fIX\fP+\fIY\fP]][@\fIM\fP]] ] "
@@ -121,7 +124,8 @@ Alternative name for \fB\-resize=scrollbars\fP.
 .SH OPTIONS CONTROLLING RESIZE BEHAVIOUR
 .TP 8
 .B \-resize[=none|scrollbars|randr]
-Select the resize mode of an X screen. The default is randr.
+Select the resize mode of an X screen.
+The default is \fBnone\fP if \fB\-fullscreen\fP is used, \fBrandr\fP otherwise.
 
 .RS
 .IP \fB\-resize=none\fP 8
@@ -167,14 +171,15 @@ on its own is equivalent to \fB\-resize=randr\fP
 
 .SH OPTIONS FOR MULTIWINDOW MODE
 .TP 8
-.B \-hostintitle
+.B \-[no]hostintitle
 Add the host name to the window title for X applications which are running
 on remote hosts, when that information is available and it's useful to do so.
+The default is enabled.
 
 .SH OPTIONS CONTROLLING WINDOWS INTEGRATION
 .TP 8
 .B \-[no]clipboard
-Enables [disables] the integration between the Cygwin/X clipboard and
+Enables [disables] the integration between the X11 clipboard and
 \fIWindows\fP clipboard.  The default is enabled.
 .TP 8
 .B "\-emulate3buttons [\fItimeout\fP]"
@@ -199,6 +204,10 @@ also to be hidden when it is over an inactive Cygwin/X window.  This
 prevents the \fIWindows\fP mouse cursor from being drawn on top of the X
 cursor.
 This parameter has no effect unless \fB-swcursor\fP is also specified.
+.TP 8
+.B \-[no]primary
+Clipboard integration may [will not] use the PRIMARY selection.
+The default is enabled.
 .TP 8
 .B \-swcursor
 Disable the usage of the \fIWindows\fP cursor and use the X11 software cursor instead.
@@ -240,9 +249,6 @@ functionality does not provide a benefit at any number of boxes; we
 can only determine the usefulness of this feature through testing.
 This option probably has limited effect on current \fIWindows\fP versions
 as they already perform GDI batching.
-This parameter works in conjunction with engines 1, 2, and 4 (Shadow
-GDI, Shadow DirectDraw, and Shadow DirectDraw Non-Locking,
-respectively).
 .TP 8
 .B "\-engine \fIengine_type_id\fP"
 This option, which is intended for Cygwin/X developers,
@@ -257,14 +263,8 @@ The engine type ids are:
 .RS
 .IP 1 4
 Shadow GDI
-.IP 2 4
-Shadow DirectDraw
 .IP 4 4
 Shadow DirectDraw Non-Locking
-.IP 8 4
-Primary DirectDraw (unsupported, obsolete)
-.IP 16 4
-Native GDI (unsupported, experimental and barely functional)
 .RE
 
 .SH FULLSCREEN OPTIONS
@@ -293,7 +293,7 @@ and debugging purposes.
 .TP 8
 .B "\-logfile \fIfilename\fP"
 Change the server log file from the default of \fI
-__logdir__/XWin.n.log\fP,
+@logdir@/XWin.n.log\fP,
 where \fIn\fP is the display number of the XWin server, to \fIfilename\fP.
 .TP 8
 .B "\-logverbose \fIlevel\fP"
@@ -305,10 +305,6 @@ additional runtime information is recorded
 and for \fIlevel\fP=3 detailed log
 information (including trace and debug output) is produced.  Bigger
 values will yield a still more detailed debug output.
-.TP 8
-.B \-silent-dup-error
-If another instance of \fIXWin\fP with the same display number is found running,
-exit silently and don't display any error message.
 .TP 8
 .B "\-xkblayout \fIlayout\fP"
 .TP 8
@@ -323,10 +319,10 @@ These options configure the xkeyboard extension to load
 a particular keyboard map as the X server starts.  The behavior is similar
 to the \fIsetxkbmap\fP(1) program.
 
-See the \fIxkeyboard-config\fP(__miscmansuffix__) manual page for a list of
+See the \fIxkeyboard-config\fP(@miscmansuffix@) manual page for a list of
 keyboard configurations.
 
-The keyboard layout data is located at \fI__datadir__/X11/xkb/\fP.  Additional information
+The keyboard layout data is located at \fI@datadir@/X11/xkb/\fP.  Additional information
 can be found in the README files there and in the \fIsetxkbmap\fP(1) manual page.
 
 For example, in order to load a German layout for a pc105 keyboard, use the options:
@@ -351,21 +347,18 @@ Color map manipulation is not supported, so the PseudoColor visual will
 not have the correct colors.
 This option is intended to allow applications which only work with a depth 8
 visual to operate in TrueColor modes.
-.TP 8
-.B \-internalwm
-Run the internal window manager.
 
 .SH LOG FILE
 As it runs \fIXWin\fP writes messages indicating the most relevant events
 to  the console
 from which it was called and to a log file that by default is located at \fI
-__logdir__/XWin.0.log\fP.  This file is mainly for debugging purposes.
+@logdir@/XWin.0.log\fP.  This file is mainly for debugging purposes.
 
 
 .SH PREFERENCES FILE
 On startup \fIXWin\fP looks for the file \fI$HOME/.XWinrc\fP or, if
 the previous file does not exist, \fI
-__sysconfdir__/X11/system.XWinrc\fP.  \fI.XWinrc\fP allows setting
+@sysconfdir@/X11/system.XWinrc\fP.  \fI.XWinrc\fP allows setting
 preferences for the following:
 .br
 * To include items into the menu associated with the \fIXWin\fP icon
@@ -389,8 +382,8 @@ Need some examples
 
 
 .SH "SEE ALSO"
-X(__miscmansuffix__), Xserver(1), xdm(1), xinit(1), XWinrc(__filemansuffix__),
-setxkbmap(1), xkeyboard-config(__miscmansuffix__).
+X(@miscmansuffix@), Xserver(1), xdm(1), xinit(1), XWinrc(@filemansuffix@),
+setxkbmap(1), xkeyboard-config(@miscmansuffix@).
 
 
 .SH BUGS

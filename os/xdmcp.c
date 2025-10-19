@@ -19,6 +19,10 @@
 
 #ifdef WIN32
 #include <X11/Xwinsock.h>
+#define XSERV_t
+#define TRANS_SERVER
+#define TRANS_REOPEN
+#include <X11/Xtrans/Xtrans.h>
 #endif
 
 #include <X11/Xos.h>
@@ -35,18 +39,16 @@
 #include <X11/X.h>
 #include <X11/Xmd.h>
 #include "misc.h"
-#include <X11/Xpoll.h>
 #include "osdep.h"
 #include "input.h"
 #include "dixstruct.h"
 #include "opaque.h"
 #include "site.h"
 
-#ifdef STREAMSCONN
-#include <tiuser.h>
-#include <netconfig.h>
-#include <netdir.h>
-#endif
+#define XSERV_t
+#define TRANS_SERVER
+#define TRANS_REOPEN
+#include <X11/Xtrans/Xtrans.h>
 
 #ifdef XDMCP
 #undef REQUEST
@@ -73,12 +75,10 @@ static struct sockaddr_in req_sockaddr;
 #endif
 static int req_socklen;
 static CARD32 SessionID;
-static CARD32 timeOutTime;
 static int timeOutRtx;
-static CARD32 defaultKeepaliveDormancy = XDM_DEF_DORMANCY;
-static CARD32 keepaliveDormancy = XDM_DEF_DORMANCY;
 static CARD16 DisplayNumber;
 static xdmcp_states XDM_INIT_STATE = XDM_OFF;
+static OsTimerPtr xdmcp_timer;
 
 #ifdef HASXDMAUTH
 static char *xdmAuthCookie;
@@ -190,15 +190,9 @@ static void send_packet(void);
 
 static void timeout(void);
 
-static void restart(void);
+static void XdmcpSocketNotify(int fd, int ready, void *data);
 
-static void XdmcpBlockHandler(void              *data ,
-                              struct timeval    **wt,
-                              void              *LastSelectMask);
-
-static void XdmcpWakeupHandler(void             *data,
-                               int              i,
-                               void             *LastSelectMask);
+static CARD32 XdmcpTimerNotify(OsTimerPtr timer, CARD32 time, void *arg);
 
 /*
  * Register the Manufacturer display ID
@@ -242,6 +236,14 @@ XdmcpUseMsg(void)
     ErrorF("-displayID display-id  manufacturer display ID for request\n");
 }
 
+static void
+XdmcpDefaultListen(void)
+{
+    /* Even when configured --disable-listen-tcp, we should listen on tcp in
+       XDMCP modes */
+    _XSERVTransListen("tcp");
+}
+
 int
 XdmcpOptions(int argc, char **argv, int i)
 {
@@ -249,11 +251,13 @@ XdmcpOptions(int argc, char **argv, int i)
         get_manager_by_name(argc, argv, i++);
         XDM_INIT_STATE = XDM_QUERY;
         AccessUsingXdmcp();
+        XdmcpDefaultListen();
         return i + 1;
     }
     if (strcmp(argv[i], "-broadcast") == 0) {
         XDM_INIT_STATE = XDM_BROADCAST;
         AccessUsingXdmcp();
+        XdmcpDefaultListen();
         return i + 1;
     }
 #if defined(IPv6) && defined(AF_INET6)
@@ -261,6 +265,7 @@ XdmcpOptions(int argc, char **argv, int i)
         i = get_mcast_options(argc, argv, ++i);
         XDM_INIT_STATE = XDM_MULTICAST;
         AccessUsingXdmcp();
+        XdmcpDefaultListen();
         return i + 1;
     }
 #endif
@@ -268,6 +273,7 @@ XdmcpOptions(int argc, char **argv, int i)
         get_manager_by_name(argc, argv, i++);
         XDM_INIT_STATE = XDM_INDIRECT;
         AccessUsingXdmcp();
+        XdmcpDefaultListen();
         return i + 1;
     }
     if (strcmp(argv[i], "-port") == 0) {
@@ -480,7 +486,7 @@ XdmcpRegisterConnection(int type, const char *address, int addrlen)
                      IN6_IS_ADDR_V4MAPPED((const struct in6_addr *) address)) {
                 fromAddr = &((struct sockaddr_in *) &FromAddress)->sin_addr;
                 regAddr =
-                    &((struct sockaddr_in6 *) &address)->sin6_addr.s6_addr[12];
+                    &((struct sockaddr_in6 *) address)->sin6_addr.s6_addr[12];
                 regAddrlen = sizeof(struct in_addr);
             }
         }
@@ -562,7 +568,28 @@ XdmcpRegisterDisplayClass(const char *name, int length)
         DisplayClass.data[i] = (CARD8) name[i];
 }
 
-/* 
+static void
+xdmcp_reset(void)
+{
+    timeOutRtx = 0;
+    if (xdmcpSocket >= 0)
+        SetNotifyFd(xdmcpSocket, XdmcpSocketNotify, X_NOTIFY_READ, NULL);
+#if defined(IPv6) && defined(AF_INET6)
+    if (xdmcpSocket6 >= 0)
+        SetNotifyFd(xdmcpSocket6, XdmcpSocketNotify, X_NOTIFY_READ, NULL);
+#endif
+    xdmcp_timer = TimerSet(NULL, 0, 0, XdmcpTimerNotify, NULL);
+    send_packet();
+}
+
+static void
+xdmcp_start(void)
+{
+    get_xdmcp_sock();
+    xdmcp_reset();
+}
+
+/*
  * initialize XDMCP; create the socket, compute the display
  * number, set up the state machine
  */
@@ -580,12 +607,8 @@ XdmcpInit(void)
         XdmcpRegisterDisplayClass(defaultDisplayClass,
                                   strlen(defaultDisplayClass));
         AccessUsingXdmcp();
-        RegisterBlockAndWakeupHandlers(XdmcpBlockHandler, XdmcpWakeupHandler,
-                                       (void *) 0);
-        timeOutRtx = 0;
         DisplayNumber = (CARD16) atoi(display);
-        get_xdmcp_sock();
-        send_packet();
+        xdmcp_start();
     }
 }
 
@@ -593,12 +616,8 @@ void
 XdmcpReset(void)
 {
     state = XDM_INIT_STATE;
-    if (state != XDM_OFF) {
-        RegisterBlockAndWakeupHandlers(XdmcpBlockHandler, XdmcpWakeupHandler,
-                                       (void *) 0);
-        timeOutRtx = 0;
-        send_packet();
-    }
+    if (state != XDM_OFF)
+        xdmcp_reset();
 }
 
 /*
@@ -613,6 +632,7 @@ XdmcpOpenDisplay(int sock)
     if (state != XDM_AWAIT_MANAGE_RESPONSE)
         return;
     state = XDM_RUN_SESSION;
+    TimerSet(xdmcp_timer, 0, XDM_DEF_DORMANCY * 1000, XdmcpTimerNotify, NULL);
     sessionSocket = sock;
 }
 
@@ -630,79 +650,24 @@ XdmcpCloseDisplay(int sock)
     isItTimeToYield = TRUE;
 }
 
-/*
- * called before going to sleep, this routine
- * may modify the timeout value about to be sent
- * to select; in this way XDMCP can do appropriate things
- * dynamically while starting up
- */
-
- /*ARGSUSED*/ static void
-XdmcpBlockHandler(void *data, /* unused */
-                  struct timeval **wt, void *pReadmask)
+static void
+XdmcpSocketNotify(int fd, int ready, void *data)
 {
-    fd_set *last_select_mask = (fd_set *) pReadmask;
-    CARD32 millisToGo;
-
     if (state == XDM_OFF)
         return;
-    FD_SET(xdmcpSocket, last_select_mask);
-#if defined(IPv6) && defined(AF_INET6)
-    if (xdmcpSocket6 >= 0)
-        FD_SET(xdmcpSocket6, last_select_mask);
-#endif
-    if (timeOutTime == 0)
-        return;
-    millisToGo = timeOutTime - GetTimeInMillis();
-    if ((int) millisToGo < 0)
-        millisToGo = 0;
-    AdjustWaitForDelay(wt, millisToGo);
+    receive_packet(fd);
 }
 
-/*
- * called after select returns; this routine will
- * recognise when XDMCP packets await and
- * process them appropriately
- */
-
- /*ARGSUSED*/ static void
-XdmcpWakeupHandler(void *data,        /* unused */
-                   int i, void *pReadmask)
+static CARD32
+XdmcpTimerNotify(OsTimerPtr timer, CARD32 time, void *arg)
 {
-    fd_set *last_select_mask = (fd_set *) pReadmask;
-    fd_set devicesReadable;
-
-    if (state == XDM_OFF)
-        return;
-    if (i > 0) {
-        if (FD_ISSET(xdmcpSocket, last_select_mask)) {
-            receive_packet(xdmcpSocket);
-            FD_CLR(xdmcpSocket, last_select_mask);
-        }
-#if defined(IPv6) && defined(AF_INET6)
-        if (xdmcpSocket6 >= 0 && FD_ISSET(xdmcpSocket6, last_select_mask)) {
-            receive_packet(xdmcpSocket6);
-            FD_CLR(xdmcpSocket6, last_select_mask);
-        }
-#endif
-        XFD_ANDSET(&devicesReadable, last_select_mask, &EnabledDevices);
-        if (XFD_ANYSET(&devicesReadable)) {
-            if (state == XDM_AWAIT_USER_INPUT)
-                restart();
-            else if (state == XDM_RUN_SESSION)
-                keepaliveDormancy = defaultKeepaliveDormancy;
-        }
-        if (XFD_ANYSET(&AllClients) && state == XDM_RUN_SESSION)
-            timeOutTime = GetTimeInMillis() + keepaliveDormancy * 1000;
+    if (state == XDM_RUN_SESSION) {
+        state = XDM_KEEPALIVE;
+        send_packet();
     }
-    else if (timeOutTime && (int) (GetTimeInMillis() - timeOutTime) >= 0) {
-        if (state == XDM_RUN_SESSION) {
-            state = XDM_KEEPALIVE;
-            send_packet();
-        }
-        else
-            timeout();
-    }
+    else
+        timeout();
+    return 0;
 }
 
 /*
@@ -824,7 +789,7 @@ send_packet(void)
     rtx = (XDM_MIN_RTX << timeOutRtx);
     if (rtx > XDM_MAX_RTX)
         rtx = XDM_MAX_RTX;
-    timeOutTime = GetTimeInMillis() + rtx * 1000;
+    TimerSet(xdmcp_timer, 0, rtx * 1000, XdmcpTimerNotify, NULL);
 }
 
 /*
@@ -838,8 +803,8 @@ XdmcpDeadSession(const char *reason)
     ErrorF("XDM: %s, declaring session dead\n", reason);
     state = XDM_INIT_STATE;
     isItTimeToYield = TRUE;
-    dispatchException |= DE_RESET;
-    timeOutTime = 0;
+    dispatchException |= (OneSession ? DE_TERMINATE : DE_RESET);
+    TimerCancel(xdmcp_timer);
     timeOutRtx = 0;
     send_packet();
 }
@@ -915,14 +880,6 @@ timeout(void)
     send_packet();
 }
 
-static void
-restart(void)
-{
-    state = XDM_INIT_STATE;
-    timeOutRtx = 0;
-    send_packet();
-}
-
 static int
 XdmcpCheckAuthentication(ARRAY8Ptr Name, ARRAY8Ptr Data, int packet_type)
 {
@@ -954,43 +911,6 @@ XdmcpAddAuthorization(ARRAY8Ptr name, ARRAY8Ptr data)
 static void
 get_xdmcp_sock(void)
 {
-#ifdef STREAMSCONN
-    struct netconfig *nconf;
-
-    if ((xdmcpSocket = t_open("/dev/udp", O_RDWR, 0)) < 0) {
-        XdmcpWarning("t_open() of /dev/udp failed");
-        return;
-    }
-
-    if (t_bind(xdmcpSocket, NULL, NULL) < 0) {
-        XdmcpWarning("UDP socket creation failed");
-        t_error("t_bind(xdmcpSocket) failed");
-        t_close(xdmcpSocket);
-        return;
-    }
-
-    /*
-     * This part of the code looks contrived. It will actually fit in nicely
-     * when the CLTS part of Xtrans is implemented.
-     */
-
-    if ((nconf = getnetconfigent("udp")) == NULL) {
-        XdmcpWarning("UDP socket creation failed: getnetconfigent()");
-        t_unbind(xdmcpSocket);
-        t_close(xdmcpSocket);
-        return;
-    }
-
-    if (netdir_options(nconf, ND_SET_BROADCAST, xdmcpSocket, NULL)) {
-        XdmcpWarning("UDP set broadcast option failed: netdir_options()");
-        freenetconfigent(nconf);
-        t_unbind(xdmcpSocket);
-        t_close(xdmcpSocket);
-        return;
-    }
-
-    freenetconfigent(nconf);
-#else
     int soopts = 1;
 
 #if defined(IPv6) && defined(AF_INET6)
@@ -1011,7 +931,6 @@ get_xdmcp_sock(void)
                        xdm_from);
         }
     }
-#endif                          /* STREAMSCONN */
 }
 
 static void
@@ -1390,15 +1309,8 @@ recv_alive_msg(unsigned length)
     if (XdmcpReadCARD8(&buffer, &SessionRunning) &&
         XdmcpReadCARD32(&buffer, &AliveSessionID)) {
         if (SessionRunning && AliveSessionID == SessionID) {
-            /* backoff dormancy period */
             state = XDM_RUN_SESSION;
-            if ((GetTimeInMillis() - LastEventTime(XIAllDevices).milliseconds) >
-                keepaliveDormancy * 1000) {
-                keepaliveDormancy <<= 1;
-                if (keepaliveDormancy > XDM_MAX_DORMANCY)
-                    keepaliveDormancy = XDM_MAX_DORMANCY;
-            }
-            timeOutTime = GetTimeInMillis() + keepaliveDormancy * 1000;
+            TimerSet(xdmcp_timer, 0, XDM_DEF_DORMANCY * 1000, XdmcpTimerNotify, NULL);
         }
         else {
             XdmcpDeadSession("Alive response indicates session dead");
@@ -1406,6 +1318,7 @@ recv_alive_msg(unsigned length)
     }
 }
 
+_X_NORETURN
 static void
 XdmcpFatal(const char *type, ARRAY8Ptr status)
 {

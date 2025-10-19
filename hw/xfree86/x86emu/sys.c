@@ -183,7 +183,7 @@ RETURNS:
 Byte value read from emulator memory.
 
 REMARKS:
-Reads a byte value from the emulator memory. 
+Reads a byte value from the emulator memory.
 ****************************************************************************/
 u8 X86API
 rdb(u32 addr)
@@ -191,7 +191,7 @@ rdb(u32 addr)
     u8 val;
 
     if (addr > M.mem_size - 1) {
-        DB(printk("mem_read: address %#lx out of range!\n", addr);
+        DB(printk("mem_read: address %#" PRIx32 " out of range!\n", addr);
             )
             HALT_SYS();
     }
@@ -217,7 +217,7 @@ rdw(u32 addr)
     u16 val = 0;
 
     if (addr > M.mem_size - 2) {
-        DB(printk("mem_read: address %#lx out of range!\n", addr);
+        DB(printk("mem_read: address %#" PRIx32 " out of range!\n", addr);
             )
             HALT_SYS();
     }
@@ -241,7 +241,7 @@ addr	- Emulator memory address to read
 RETURNS:
 Long value read from emulator memory.
 REMARKS:
-Reads a long value from the emulator memory. 
+Reads a long value from the emulator memory.
 ****************************************************************************/
 u32 X86API
 rdl(u32 addr)
@@ -249,7 +249,7 @@ rdl(u32 addr)
     u32 val = 0;
 
     if (addr > M.mem_size - 4) {
-        DB(printk("mem_read: address %#lx out of range!\n", addr);
+        DB(printk("mem_read: address %#" PRIx32 " out of range!\n", addr);
             )
             HALT_SYS();
     }
@@ -282,7 +282,7 @@ wrb(u32 addr, u8 val)
     DB(if (DEBUG_MEM_TRACE())
        printk("%#08x 1 <- %#x\n", addr, val);)
         if (addr > M.mem_size - 1) {
-            DB(printk("mem_write: address %#lx out of range!\n", addr);
+            DB(printk("mem_write: address %#" PRIx32 " out of range!\n",addr);
                 )
                 HALT_SYS();
         }
@@ -303,7 +303,7 @@ wrw(u32 addr, u16 val)
     DB(if (DEBUG_MEM_TRACE())
        printk("%#08x 2 <- %#x\n", addr, val);)
         if (addr > M.mem_size - 2) {
-            DB(printk("mem_write: address %#lx out of range!\n", addr);
+            DB(printk("mem_write: address %#" PRIx32 " out of range!\n",addr);
                 )
                 HALT_SYS();
         }
@@ -323,7 +323,7 @@ addr	- Emulator memory address to read
 val		- Value to store
 
 REMARKS:
-Writes a long value to emulator memory. 
+Writes a long value to emulator memory.
 ****************************************************************************/
 void X86API
 wrl(u32 addr, u32 val)
@@ -331,7 +331,7 @@ wrl(u32 addr, u32 val)
     DB(if (DEBUG_MEM_TRACE())
        printk("%#08x 4 <- %#x\n", addr, val);)
         if (addr > M.mem_size - 4) {
-            DB(printk("mem_write: address %#lx out of range!\n", addr);
+            DB(printk("mem_write: address %#" PRIx32 " out of range!\n",addr);
                 )
                 HALT_SYS();
         }

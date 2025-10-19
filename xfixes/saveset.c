@@ -58,10 +58,11 @@ ProcXFixesChangeSaveSet(ClientPtr client)
     return AlterSaveSetForClient(client, pWin, stuff->mode, toRoot, map);
 }
 
-int
+int _X_COLD
 SProcXFixesChangeSaveSet(ClientPtr client)
 {
     REQUEST(xXFixesChangeSaveSetReq);
+    REQUEST_SIZE_MATCH(xXFixesChangeSaveSetReq);
 
     swaps(&stuff->length);
     swapl(&stuff->window);

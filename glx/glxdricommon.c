@@ -27,6 +27,7 @@
 #include <dix-config.h>
 #endif
 
+#include <ctype.h>
 #include <stdint.h>
 #include <errno.h>
 #include <dlfcn.h>
@@ -35,34 +36,12 @@
 #include <GL/glxtokens.h>
 #include <GL/internal/dri_interface.h>
 #include <os.h>
+#include "extinit.h"
 #include "glxserver.h"
 #include "glxext.h"
 #include "glxcontext.h"
 #include "glxscreens.h"
 #include "glxdricommon.h"
-
-static int
-getUST(int64_t * ust)
-{
-    struct timeval tv;
-
-    if (ust == NULL)
-        return -EFAULT;
-
-    if (gettimeofday(&tv, NULL) == 0) {
-        ust[0] = (tv.tv_sec * 1000000) + tv.tv_usec;
-        return 0;
-    }
-    else {
-        return -errno;
-    }
-}
-
-const __DRIsystemTimeExtension systemTimeExtension = {
-    {__DRI_SYSTEM_TIME, 1},
-    getUST,
-    NULL,
-};
 
 #define __ATTRIB(attrib, field) \
     { attrib, offsetof(__GLXconfig, field) }
@@ -122,15 +101,31 @@ setScalar(__GLXconfig * config, unsigned int attrib, unsigned int value)
         }
 }
 
+static Bool
+render_type_is_pbuffer_only(unsigned renderType)
+{
+    /* The GL_ARB_color_buffer_float spec says:
+     *
+     *     "Note that floating point rendering is only supported for
+     *     GLXPbuffer drawables.  The GLX_DRAWABLE_TYPE attribute of the
+     *     GLXFBConfig must have the GLX_PBUFFER_BIT bit set and the
+     *     GLX_RENDER_TYPE attribute must have the GLX_RGBA_FLOAT_BIT set."
+     */
+    return !!(renderType & (__DRI_ATTRIB_UNSIGNED_FLOAT_BIT
+                            | __DRI_ATTRIB_FLOAT_BIT));
+}
+
 static __GLXconfig *
 createModeFromConfig(const __DRIcoreExtension * core,
                      const __DRIconfig * driConfig,
-                     unsigned int visualType, unsigned int drawableType)
+                     unsigned int visualType,
+                     GLboolean duplicateForComp)
 {
     __GLXDRIconfig *config;
     GLint renderType = 0;
-    unsigned int attrib, value;
+    unsigned int attrib, value, drawableType = GLX_PBUFFER_BIT;
     int i;
+
 
     config = calloc(1, sizeof *config);
 
@@ -167,39 +162,61 @@ createModeFromConfig(const __DRIcoreExtension * core,
                 config->config.bindToTextureTargets |=
                     GLX_TEXTURE_RECTANGLE_BIT_EXT;
             break;
+        case __DRI_ATTRIB_SWAP_METHOD:
+            /* Workaround for broken dri drivers */
+            if (value != GLX_SWAP_UNDEFINED_OML &&
+                value != GLX_SWAP_COPY_OML &&
+                value != GLX_SWAP_EXCHANGE_OML)
+                value = GLX_SWAP_UNDEFINED_OML;
+            /* Fall through. */
         default:
             setScalar(&config->config, attrib, value);
             break;
         }
     }
 
+    if (!render_type_is_pbuffer_only(renderType))
+        drawableType |= GLX_WINDOW_BIT | GLX_PIXMAP_BIT;
+
     config->config.next = NULL;
-    config->config.xRenderable = GL_TRUE;
     config->config.visualType = visualType;
     config->config.renderType = renderType;
     config->config.drawableType = drawableType;
     config->config.yInverted = GL_TRUE;
 
-    return &config->config;
-}
+#ifdef COMPOSITE
+    if (!noCompositeExtension) {
+        /*
+        * Here we decide what fbconfigs will be duplicated for compositing.
+        * fgbconfigs marked with duplicatedForConf will be reserved for
+        * compositing visuals.
+        * It might look strange to do this decision this late when translation
+        * from a __DRIConfig is already done, but using the __DRIConfig
+        * accessor function becomes worse both with respect to code complexity
+        * and CPU usage.
+        */
+        if (duplicateForComp &&
+            (render_type_is_pbuffer_only(renderType) ||
+            config->config.rgbBits != 32 ||
+            config->config.redBits != 8 ||
+            config->config.greenBits != 8 ||
+            config->config.blueBits != 8 ||
+            config->config.visualRating != GLX_NONE ||
+            config->config.sampleBuffers != 0)) {
+            free(config);
+            return NULL;
+        }
 
-static Bool
-render_type_is_pbuffer_only(unsigned renderType)
-{
-    /* The GL_ARB_color_buffer_float spec says:
-     *
-     *     "Note that floating point rendering is only supported for
-     *     GLXPbuffer drawables.  The GLX_DRAWABLE_TYPE attribute of the
-     *     GLXFBConfig must have the GLX_PBUFFER_BIT bit set and the
-     *     GLX_RENDER_TYPE attribute must have the GLX_RGBA_FLOAT_BIT set."
-     */
-    return !!(renderType & (__DRI_ATTRIB_UNSIGNED_FLOAT_BIT
-                            | __DRI_ATTRIB_FLOAT_BIT));
+        config->config.duplicatedForComp = duplicateForComp;
+    }
+#endif
+
+    return &config->config;
 }
 
 __GLXconfig *
 glxConvertConfigs(const __DRIcoreExtension * core,
-                  const __DRIconfig ** configs, unsigned int drawableType)
+                  const __DRIconfig ** configs)
 {
     __GLXconfig head, *tail;
     int i;
@@ -208,40 +225,35 @@ glxConvertConfigs(const __DRIcoreExtension * core,
     head.next = NULL;
 
     for (i = 0; configs[i]; i++) {
-        unsigned renderType = 0;
-        if (core->getConfigAttrib(configs[i], __DRI_ATTRIB_RENDER_TYPE,
-                                  &renderType)) {
-            if (render_type_is_pbuffer_only(renderType) &&
-                !(drawableType & GLX_PBUFFER_BIT))
-                continue;
-        }
-        /* Add all the others */
-        tail->next = createModeFromConfig(core,
-                                          configs[i], GLX_TRUE_COLOR,
-                                          drawableType);
+        tail->next = createModeFromConfig(core, configs[i], GLX_TRUE_COLOR,
+                                          GL_FALSE);
         if (tail->next == NULL)
             break;
-
         tail = tail->next;
     }
 
     for (i = 0; configs[i]; i++) {
-        unsigned int renderType = 0;
-        if (core->getConfigAttrib(configs[i], __DRI_ATTRIB_RENDER_TYPE,
-                                  &renderType)) {
-            if (render_type_is_pbuffer_only(renderType) &&
-                !(drawableType & GLX_PBUFFER_BIT))
-                continue;
-        }
-        /* Add all the others */
-        tail->next = createModeFromConfig(core,
-                                          configs[i], GLX_DIRECT_COLOR,
-                                          drawableType);
+        tail->next = createModeFromConfig(core, configs[i], GLX_DIRECT_COLOR,
+                                          GL_FALSE);
         if (tail->next == NULL)
             break;
 
         tail = tail->next;
     }
+
+#ifdef COMPOSITE
+    if (!noCompositeExtension) {
+        /* Duplicate fbconfigs for use with compositing visuals */
+        for (i = 0; configs[i]; i++) {
+            tail->next = createModeFromConfig(core, configs[i], GLX_TRUE_COLOR,
+                                            GL_TRUE);
+            if (tail->next == NULL)
+                continue;
+
+            tail = tail->next;
+        }
+    }
+#endif
 
     return head.next;
 }
@@ -266,20 +278,59 @@ glxProbeDriver(const char *driverName,
     char filename[PATH_MAX];
     char *get_extensions_name;
     const __DRIextension **extensions = NULL;
+    const char *path = NULL;
 
-    snprintf(filename, sizeof filename, "%s/%s_dri.so",
-             dri_driver_path, driverName);
+    /* Search in LIBGL_DRIVERS_PATH if we're not setuid. */
+    if (!PrivsElevated())
+        path = getenv("LIBGL_DRIVERS_PATH");
 
-    driver = dlopen(filename, RTLD_LAZY | RTLD_LOCAL);
-    if (driver == NULL) {
+    if (!path)
+        path = dri_driver_path;
+
+    do {
+        const char *next;
+        int path_len;
+
+        next = strchr(path, ':');
+        if (next) {
+            path_len = next - path;
+            next++;
+        } else {
+            path_len = strlen(path);
+            next = NULL;
+        }
+
+        snprintf(filename, sizeof filename, "%.*s/%s_dri.so", path_len, path,
+                 driverName);
+
+        driver = dlopen(filename, RTLD_LAZY | RTLD_LOCAL);
+        if (driver != NULL)
+            break;
+
         LogMessage(X_ERROR, "AIGLX error: dlopen of %s failed (%s)\n",
                    filename, dlerror());
+
+        path = next;
+    } while (path);
+
+    if (driver == NULL) {
+        LogMessage(X_ERROR, "AIGLX error: unable to load driver %s\n",
+                  driverName);
         goto cleanup_failure;
     }
 
     if (asprintf(&get_extensions_name, "%s_%s",
                  __DRI_DRIVER_GET_EXTENSIONS, driverName) != -1) {
         const __DRIextension **(*get_extensions)(void);
+
+        for (i = 0; i < strlen(get_extensions_name); i++) {
+            /* Replace all non-alphanumeric characters with underscore,
+             * since they are not allowed in C symbol names. That fixes up
+             * symbol name for drivers with '-drm' suffix
+             */
+            if (!isalnum(get_extensions_name[i]))
+                get_extensions_name[i] = '_';
+        }
 
         get_extensions = dlsym(driver, get_extensions_name);
         if (get_extensions)

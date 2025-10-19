@@ -78,11 +78,10 @@ xf86CallDriverProbe(DriverPtr drv, Bool detect_only)
     Bool foundScreen = FALSE;
 
 #ifdef XSERVER_PLATFORM_BUS
-    if (drv->platformProbe != NULL) {
+    /* xf86platformBus.c does not support Xorg -configure */
+    if (!xf86DoConfigure && drv->platformProbe != NULL) {
         foundScreen = xf86platformProbeDev(drv);
     }
-    if (ServerIsNotSeat0() && foundScreen)
-        return foundScreen;
 #endif
 
 #ifdef XSERVER_LIBPCIACCESS
@@ -118,12 +117,36 @@ xf86BusConfig(void)
     int i, j;
 
     /*
-     * Now call each of the Probe functions.  Each successful probe will
-     * result in an extra entry added to the xf86Screens[] list for each
-     * instance of the hardware found.
+     * 3 step probe to (hopefully) ensure that we always find at least 1
+     * (non GPU) screen:
+     *
+     * 1. Call each drivers probe function normally,
+     *    Each successful probe will result in an extra entry added to the
+     *    xf86Screens[] list for each instance of the hardware found.
      */
     for (i = 0; i < xf86NumDrivers; i++) {
         xf86CallDriverProbe(xf86DriverList[i], FALSE);
+    }
+
+    /*
+     * 2. If no Screens were found, call each drivers probe function with
+     *    ignorePrimary = TRUE, to ensure that we do actually get a
+     *    Screen if there is atleast one supported video card.
+     */
+    if (xf86NumScreens == 0) {
+        xf86ProbeIgnorePrimary = TRUE;
+        for (i = 0; i < xf86NumDrivers && xf86NumScreens == 0; i++) {
+            xf86CallDriverProbe(xf86DriverList[i], FALSE);
+        }
+        xf86ProbeIgnorePrimary = FALSE;
+    }
+
+    /*
+     * 3. Call xf86platformAddGPUDevices() to add any additional video cards as
+     *    GPUScreens (GPUScreens are only supported by platformBus drivers).
+     */
+    for (i = 0; i < xf86NumDrivers; i++) {
+        xf86platformAddGPUDevices(xf86DriverList[i]);
     }
 
     /* If nothing was detected, return now */
@@ -256,11 +279,11 @@ int
 xf86AllocateEntity(void)
 {
     xf86NumEntities++;
-    xf86Entities = xnfrealloc(xf86Entities,
-                              sizeof(EntityPtr) * xf86NumEntities);
+    xf86Entities = xnfreallocarray(xf86Entities,
+                                   xf86NumEntities, sizeof(EntityPtr));
     xf86Entities[xf86NumEntities - 1] = xnfcalloc(1, sizeof(EntityRec));
     xf86Entities[xf86NumEntities - 1]->entityPrivates =
-        xnfcalloc(sizeof(DevUnion) * xf86EntityPrivateCount, 1);
+        xnfcalloc(xf86EntityPrivateCount, sizeof(DevUnion));
     return xf86NumEntities - 1;
 }
 
@@ -290,19 +313,6 @@ xf86IsEntityPrimary(int entityIndex)
 }
 
 Bool
-xf86SetEntityFuncs(int entityIndex, EntityProc init, EntityProc enter,
-                   EntityProc leave, void *private)
-{
-    if (entityIndex >= xf86NumEntities)
-        return FALSE;
-    xf86Entities[entityIndex]->entityInit = init;
-    xf86Entities[entityIndex]->entityEnter = enter;
-    xf86Entities[entityIndex]->entityLeave = leave;
-    xf86Entities[entityIndex]->private = private;
-    return TRUE;
-}
-
-Bool
 xf86DriverHasEntities(DriverPtr drvp)
 {
     int i;
@@ -326,12 +336,13 @@ xf86AddEntityToScreen(ScrnInfoPtr pScrn, int entityIndex)
     }
 
     pScrn->numEntities++;
-    pScrn->entityList = xnfrealloc(pScrn->entityList,
-                                   pScrn->numEntities * sizeof(int));
+    pScrn->entityList = xnfreallocarray(pScrn->entityList,
+                                        pScrn->numEntities, sizeof(int));
     pScrn->entityList[pScrn->numEntities - 1] = entityIndex;
     xf86Entities[entityIndex]->inUse = TRUE;
-    pScrn->entityInstanceList = xnfrealloc(pScrn->entityInstanceList,
-                                           pScrn->numEntities * sizeof(int));
+    pScrn->entityInstanceList = xnfreallocarray(pScrn->entityInstanceList,
+                                                pScrn->numEntities,
+                                                sizeof(int));
     pScrn->entityInstanceList[pScrn->numEntities - 1] = 0;
 }
 
@@ -427,8 +438,8 @@ xf86AddDevToEntity(int entityIndex, GDevPtr dev)
 
     pEnt = xf86Entities[entityIndex];
     pEnt->numInstances++;
-    pEnt->devices = xnfrealloc(pEnt->devices,
-                               pEnt->numInstances * sizeof(GDevPtr));
+    pEnt->devices = xnfreallocarray(pEnt->devices,
+                                    pEnt->numInstances, sizeof(GDevPtr));
     pEnt->devices[pEnt->numInstances - 1] = dev;
     dev->claimed = TRUE;
 }
@@ -514,32 +525,8 @@ xf86GetDevFromEntity(int entityIndex, int instance)
 
     for (i = 0; i < xf86Entities[entityIndex]->numInstances; i++)
         if (xf86Entities[entityIndex]->devices[i]->screen == instance)
-            break;
-    return xf86Entities[entityIndex]->devices[i];
-}
-
-/*
- * xf86AccessEnter() -- gets called to save the text mode VGA IO 
- * resources when reentering the server after a VT switch.
- */
-void
-xf86AccessEnter(void)
-{
-    int i;
-
-    for (i = 0; i < xf86NumEntities; i++)
-        if (xf86Entities[i]->entityEnter)
-            xf86Entities[i]->entityEnter(i, xf86Entities[i]->private);
-}
-
-void
-xf86AccessLeave(void)
-{
-    int i;
-
-    for (i = 0; i < xf86NumEntities; i++)
-        if (xf86Entities[i]->entityLeave)
-            xf86Entities[i]->entityLeave(i, xf86Entities[i]->private);
+            return xf86Entities[entityIndex]->devices[i];
+    return NULL;
 }
 
 /*
@@ -549,8 +536,6 @@ xf86AccessLeave(void)
 void
 xf86PostProbe(void)
 {
-    int i;
-
     if (fbSlotClaimed && (
 #if (defined(__sparc__) || defined(__sparc)) && !defined(__OpenBSD__)
                              sbusSlotClaimed ||
@@ -566,10 +551,6 @@ xf86PostProbe(void)
         ))
         FatalError("Cannot run in framebuffer mode. Please specify busIDs "
                    "       for all framebuffer devices\n");
-
-    for (i = 0; i < xf86NumEntities; i++)
-        if (xf86Entities[i]->entityInit)
-            xf86Entities[i]->entityInit(i, xf86Entities[i]->private);
 }
 
 int
@@ -670,8 +651,8 @@ xf86AllocateEntityPrivateIndex(void)
     idx = xf86EntityPrivateCount++;
     for (i = 0; i < xf86NumEntities; i++) {
         pEnt = xf86Entities[i];
-        nprivs = xnfrealloc(pEnt->entityPrivates,
-                            xf86EntityPrivateCount * sizeof(DevUnion));
+        nprivs = xnfreallocarray(pEnt->entityPrivates,
+                                 xf86EntityPrivateCount, sizeof(DevUnion));
         /* Zero the new private */
         memset(&nprivs[idx], 0, sizeof(DevUnion));
         pEnt->entityPrivates = nprivs;

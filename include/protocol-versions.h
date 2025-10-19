@@ -48,7 +48,7 @@
 
 /* DRI3 */
 #define SERVER_DRI3_MAJOR_VERSION               1
-#define SERVER_DRI3_MINOR_VERSION               0
+#define SERVER_DRI3_MINOR_VERSION               2
 
 /* DMX */
 #define SERVER_DMX_MAJOR_VERSION		2
@@ -69,11 +69,11 @@
 
 /* Present */
 #define SERVER_PRESENT_MAJOR_VERSION            1
-#define SERVER_PRESENT_MINOR_VERSION            0
+#define SERVER_PRESENT_MINOR_VERSION            2
 
 /* RandR */
 #define SERVER_RANDR_MAJOR_VERSION		1
-#define SERVER_RANDR_MINOR_VERSION		4
+#define SERVER_RANDR_MINOR_VERSION		6
 
 /* Record */
 #define SERVER_RECORD_MAJOR_VERSION		1
@@ -110,6 +110,11 @@
 /* Sync */
 #define SERVER_SYNC_MAJOR_VERSION		3
 #define SERVER_SYNC_MINOR_VERSION		1
+
+/* Windows DRI */
+#define SERVER_WINDOWSDRI_MAJOR_VERSION		1
+#define SERVER_WINDOWSDRI_MINOR_VERSION		0
+#define SERVER_WINDOWSDRI_PATCH_VERSION		0
 
 /* Windows WM */
 #define SERVER_WINDOWSWM_MAJOR_VERSION		1

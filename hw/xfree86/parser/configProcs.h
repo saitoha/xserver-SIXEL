@@ -27,8 +27,7 @@
 
 /* Private procs.  Public procs are in xf86Parser.h and xf86Optrec.h */
 
-/* exported functions are/were used by the X Server, and need to be
- * made public when installing libxf86config */
+/* exported functions are/were used by the X Server */
 
 /* Device.c */
 XF86ConfDevicePtr xf86parseDeviceSection(void);
@@ -55,12 +54,10 @@ int xf86validateInput(XF86ConfigPtr p);
 /* InputClass.c */
 XF86ConfInputClassPtr xf86parseInputClassSection(void);
 void xf86printInputClassSection(FILE * f, XF86ConfInputClassPtr ptr);
-void xf86freeInputClassList(XF86ConfInputClassPtr ptr);
 
 /* OutputClass.c */
 XF86ConfOutputClassPtr xf86parseOutputClassSection(void);
 void xf86printOutputClassSection(FILE * f, XF86ConfOutputClassPtr ptr);
-void xf86freeOutputClassList(XF86ConfOutputClassPtr ptr);
 
 /* Layout.c */
 XF86ConfLayoutPtr xf86parseLayoutSection(void);
@@ -92,16 +89,12 @@ XF86ConfInputPtr xf86parsePointerSection(void);
 XF86ConfScreenPtr xf86parseScreenSection(void);
 void xf86printScreenSection(FILE * cf, XF86ConfScreenPtr ptr);
 extern _X_EXPORT void xf86freeScreenList(XF86ConfScreenPtr ptr);
-void xf86freeAdaptorLinkList(XF86ConfAdaptorLinkPtr ptr);
-void xf86freeDisplayList(XF86ConfDisplayPtr ptr);
-void xf86freeModeList(XF86ModePtr ptr);
 int xf86validateScreen(XF86ConfigPtr p);
 
 /* Vendor.c */
 XF86ConfVendorPtr xf86parseVendorSection(void);
 void xf86freeVendorList(XF86ConfVendorPtr p);
 void xf86printVendorSection(FILE * cf, XF86ConfVendorPtr ptr);
-void xf86freeVendorSubList(XF86ConfVendSubPtr ptr);
 
 /* Video.c */
 XF86ConfVideoAdaptorPtr xf86parseVideoAdaptorSection(void);
@@ -109,9 +102,9 @@ void xf86printVideoAdaptorSection(FILE * cf, XF86ConfVideoAdaptorPtr ptr);
 void xf86freeVideoAdaptorList(XF86ConfVideoAdaptorPtr ptr);
 
 /* scan.c */
-int xf86getToken(xf86ConfigSymTabRec * tab);
+int xf86getToken(const xf86ConfigSymTabRec * tab);
 int xf86getSubToken(char **comment);
-int xf86getSubTokenWithTab(char **comment, xf86ConfigSymTabRec * tab);
+int xf86getSubTokenWithTab(char **comment, const xf86ConfigSymTabRec * tab);
 void xf86unGetToken(int token);
 char *xf86tokenString(void);
 void
@@ -123,7 +116,7 @@ _X_ATTRIBUTE_PRINTF(1, 2);
 void
 xf86setSection(const char *section);
 int
-xf86getStringToken(xf86ConfigSymTabRec * tab);
+xf86getStringToken(const xf86ConfigSymTabRec * tab);
 
 /* write.c */
 /* DRI.c */

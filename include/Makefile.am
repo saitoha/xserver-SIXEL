@@ -27,12 +27,14 @@ sdk_HEADERS =		\
 	gcstruct.h	\
 	globals.h	\
 	glx_extinit.h	\
+	glxvndabi.h	\
 	input.h		\
 	inputstr.h	\
 	list.h		\
 	misc.h		\
 	miscstruct.h	\
 	opaque.h	\
+	nonsdk_extinit.h	\
 	optionstr.h	\
 	os.h		\
 	pixmap.h	\
@@ -51,15 +53,15 @@ sdk_HEADERS =		\
 	selection.h	\
 	servermd.h	\
 	site.h		\
-	swaprep.h	\
-	swapreq.h	\
 	validate.h	\
+	displaymode.h    \
 	window.h	\
 	windowstr.h	\
 	xkbfile.h	\
 	xkbsrv.h	\
 	xkbstr.h        \
 	xkbrules.h      \
+	xserver_poll.h	\
 	xserver-properties.h
 
 nodist_sdk_HEADERS = xorg-server.h
@@ -70,7 +72,15 @@ AM_CFLAGS = $(DIX_CFLAGS)
 EXTRA_DIST = 	\
 	busfault.h dbus-core.h \
 	dix-config-apple-verbatim.h \
-	dixfontstubs.h eventconvert.h eventstr.h inpututils.h \
+	eventconvert.h eventstr.h inpututils.h \
+	probes.h \
 	protocol-versions.h \
+	swaprep.h \
+	swapreq.h \
 	systemd-logind.h \
+        vidmodestr.h \
+	xorg-config.h.meson.in \
+	xorg-server.h.meson.in \
+	xwayland-config.h.meson.in \
+	xwin-config.h.meson.in \
 	xsha1.h

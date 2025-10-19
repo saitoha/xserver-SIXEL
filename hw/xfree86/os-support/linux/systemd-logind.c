@@ -34,13 +34,13 @@
 
 #include "os.h"
 #include "dbus-core.h"
+#include "linux.h"
 #include "xf86.h"
 #include "xf86platformBus.h"
 #include "xf86Xinput.h"
+#include "globals.h"
 
 #include "systemd-logind.h"
-
-#define DBUS_TIMEOUT 500 /* Wait max 0.5 seconds */
 
 struct systemd_logind_info {
     DBusConnection *conn;
@@ -130,7 +130,7 @@ systemd_logind_take_fd(int _major, int _minor, const char *path,
     }
 
     reply = dbus_connection_send_with_reply_and_block(info->conn, msg,
-                                                      DBUS_TIMEOUT, &error);
+                                                      DBUS_TIMEOUT_USE_DEFAULT, &error);
     if (!reply) {
         LogMessage(X_ERROR, "systemd-logind: failed to take device %s: %s\n",
                    path, error.message);
@@ -207,7 +207,7 @@ systemd_logind_release_fd(int _major, int _minor, int fd)
     }
 
     reply = dbus_connection_send_with_reply_and_block(info->conn, msg,
-                                                      DBUS_TIMEOUT, &error);
+                                                      DBUS_TIMEOUT_USE_DEFAULT, &error);
     if (!reply)
         LogMessage(X_ERROR, "systemd-logind: failed to release device: %s\n",
                    error.message);
@@ -289,7 +289,7 @@ systemd_logind_ack_pause(struct systemd_logind_info *info,
     }
 
     reply = dbus_connection_send_with_reply_and_block(info->conn, msg,
-                                                      DBUS_TIMEOUT, &error);
+                                                      DBUS_TIMEOUT_USE_DEFAULT, &error);
     if (!reply)
         LogMessage(X_ERROR, "systemd-logind: failed to ack pause: %s\n",
                    error.message);
@@ -312,6 +312,9 @@ message_filter(DBusConnection * connection, DBusMessage * message, void *data)
     DBusError error;
     dbus_int32_t major, minor;
     char *pause_str;
+
+    if (dbus_message_get_type (message) != DBUS_MESSAGE_TYPE_SIGNAL)
+        return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
 
     dbus_error_init(&error);
 
@@ -387,7 +390,7 @@ message_filter(DBusConnection * connection, DBusMessage * message, void *data)
     LogMessage(X_INFO, "systemd-logind: got %s for %u:%u\n",
                pause ? "pause" : "resume", major, minor);
 
-    pdev = xf86_find_platform_device_by_devnum(major, minor);        
+    pdev = xf86_find_platform_device_by_devnum(major, minor);
     if (!pdev)
         pInfo = systemd_logind_find_info_ptr_by_devnum(xf86InputDevs,
                                                        major, minor);
@@ -454,7 +457,7 @@ connect_hook(DBusConnection *connection, void *data)
     }
 
     reply = dbus_connection_send_with_reply_and_block(connection, msg,
-                                                      DBUS_TIMEOUT, &error);
+                                                      DBUS_TIMEOUT_USE_DEFAULT, &error);
     if (!reply) {
         LogMessage(X_ERROR, "systemd-logind: failed to get session: %s\n",
                    error.message);
@@ -489,7 +492,7 @@ connect_hook(DBusConnection *connection, void *data)
     }
 
     reply = dbus_connection_send_with_reply_and_block(connection, msg,
-                                                      DBUS_TIMEOUT, &error);
+                                                      DBUS_TIMEOUT_USE_DEFAULT, &error);
     if (!reply) {
         LogMessage(X_ERROR, "systemd-logind: TakeControl failed: %s\n",
                    error.message);
@@ -498,6 +501,24 @@ connect_hook(DBusConnection *connection, void *data)
 
     dbus_bus_add_match(connection,
         "type='signal',sender='org.freedesktop.DBus',interface='org.freedesktop.DBus',member='NameOwnerChanged',path='/org/freedesktop/DBus'",
+        &error);
+    if (dbus_error_is_set(&error)) {
+        LogMessage(X_ERROR, "systemd-logind: could not add match: %s\n",
+                   error.message);
+        goto cleanup;
+    }
+
+    dbus_bus_add_match(connection,
+        "type='signal',sender='org.freedesktop.login1',interface='org.freedesktop.login1.Session',member='PauseDevice'",
+        &error);
+    if (dbus_error_is_set(&error)) {
+        LogMessage(X_ERROR, "systemd-logind: could not add match: %s\n",
+                   error.message);
+        goto cleanup;
+    }
+
+    dbus_bus_add_match(connection,
+        "type='signal',sender='org.freedesktop.login1',interface='org.freedesktop.login1.Session',member='ResumeDevice'",
         &error);
     if (dbus_error_is_set(&error)) {
         LogMessage(X_ERROR, "systemd-logind: could not add match: %s\n",
@@ -561,7 +582,7 @@ systemd_logind_release_control(struct systemd_logind_info *info)
     }
 
     reply = dbus_connection_send_with_reply_and_block(info->conn, msg,
-                                                      DBUS_TIMEOUT, &error);
+                                                      DBUS_TIMEOUT_USE_DEFAULT, &error);
     if (!reply) {
         LogMessage(X_ERROR, "systemd-logind: ReleaseControl failed: %s\n",
                    error.message);
@@ -595,6 +616,13 @@ static struct dbus_core_hook core_hook = {
 int
 systemd_logind_init(void)
 {
+    if (!ServerIsNotSeat0() && linux_parse_vt_settings(TRUE) && !linux_get_keeptty()) {
+        LogMessage(X_INFO,
+            "systemd-logind: logind integration requires -keeptty and "
+            "-keeptty was not provided, disabling logind integration\n");
+        return 1;
+    }
+
     return dbus_core_add_hook(&core_hook);
 }
 

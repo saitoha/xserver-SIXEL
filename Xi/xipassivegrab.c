@@ -46,13 +46,14 @@
 #include "misc.h"
 #include "inpututils.h"
 
-int
+int _X_COLD
 SProcXIPassiveGrabDevice(ClientPtr client)
 {
     int i;
     uint32_t *mods;
 
     REQUEST(xXIPassiveGrabDeviceReq);
+    REQUEST_AT_LEAST_SIZE(xXIPassiveGrabDeviceReq);
 
     swaps(&stuff->length);
     swaps(&stuff->deviceid);
@@ -63,6 +64,8 @@ SProcXIPassiveGrabDevice(ClientPtr client)
     swaps(&stuff->mask_len);
     swaps(&stuff->num_modifiers);
 
+    REQUEST_FIXED_SIZE(xXIPassiveGrabDeviceReq,
+        ((uint32_t) stuff->mask_len + stuff->num_modifiers) *4);
     mods = (uint32_t *) &stuff[1] + stuff->mask_len;
 
     for (i = 0; i < stuff->num_modifiers; i++, mods++) {
@@ -85,14 +88,15 @@ ProcXIPassiveGrabDevice(ClientPtr client)
     };
     int i, ret = Success;
     uint32_t *modifiers;
-    xXIGrabModifierInfo *modifiers_failed;
+    xXIGrabModifierInfo *modifiers_failed = NULL;
     GrabMask mask = { 0 };
     GrabParameters param;
     void *tmp;
     int mask_len;
 
     REQUEST(xXIPassiveGrabDeviceReq);
-    REQUEST_AT_LEAST_SIZE(xXIPassiveGrabDeviceReq);
+    REQUEST_FIXED_SIZE(xXIPassiveGrabDeviceReq,
+        ((uint32_t) stuff->mask_len + stuff->num_modifiers) * 4);
 
     if (stuff->deviceid == XIAllDevices)
         dev = inputInfo.all_devices;
@@ -199,8 +203,14 @@ ProcXIPassiveGrabDevice(ClientPtr client)
                                 &param, XI2, &mask);
             break;
         case XIGrabtypeKeycode:
-            status = GrabKey(client, dev, mod_dev, stuff->detail,
-                             &param, XI2, &mask);
+            /* XI2 allows 32-bit keycodes but thanks to XKB we can never
+             * implement this. Just return an error for all keycodes that
+             * cannot work anyway */
+            if (stuff->detail > 255)
+                status = XIAlreadyGrabbed;
+            else
+                status = GrabKey(client, dev, mod_dev, stuff->detail,
+                                 &param, XI2, &mask);
             break;
         case XIGrabtypeEnter:
         case XIGrabtypeFocusIn:
@@ -228,13 +238,13 @@ ProcXIPassiveGrabDevice(ClientPtr client)
     if (rep.num_modifiers)
         WriteToClient(client, rep.length * 4, modifiers_failed);
 
-    free(modifiers_failed);
  out:
+    free(modifiers_failed);
     xi2mask_free(&mask.xi2mask);
     return ret;
 }
 
-void
+void _X_COLD
 SRepXIPassiveGrabDevice(ClientPtr client, int size,
                         xXIPassiveGrabDeviceReply * rep)
 {
@@ -245,13 +255,14 @@ SRepXIPassiveGrabDevice(ClientPtr client, int size,
     WriteToClient(client, size, rep);
 }
 
-int
+int _X_COLD
 SProcXIPassiveUngrabDevice(ClientPtr client)
 {
     int i;
     uint32_t *modifiers;
 
     REQUEST(xXIPassiveUngrabDeviceReq);
+    REQUEST_AT_LEAST_SIZE(xXIPassiveUngrabDeviceReq);
 
     swaps(&stuff->length);
     swapl(&stuff->grab_window);
@@ -259,6 +270,8 @@ SProcXIPassiveUngrabDevice(ClientPtr client)
     swapl(&stuff->detail);
     swaps(&stuff->num_modifiers);
 
+    REQUEST_FIXED_SIZE(xXIPassiveUngrabDeviceReq,
+                       ((uint32_t) stuff->num_modifiers) << 2);
     modifiers = (uint32_t *) &stuff[1];
 
     for (i = 0; i < stuff->num_modifiers; i++, modifiers++)
@@ -277,7 +290,8 @@ ProcXIPassiveUngrabDevice(ClientPtr client)
     int i, rc;
 
     REQUEST(xXIPassiveUngrabDeviceReq);
-    REQUEST_AT_LEAST_SIZE(xXIPassiveUngrabDeviceReq);
+    REQUEST_FIXED_SIZE(xXIPassiveUngrabDeviceReq,
+                       ((uint32_t) stuff->num_modifiers) << 2);
 
     if (stuff->deviceid == XIAllDevices)
         dev = inputInfo.all_devices;

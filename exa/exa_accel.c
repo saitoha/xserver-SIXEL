@@ -386,7 +386,7 @@ exaHWCopyNtoN(DrawablePtr pSrcDrawable,
     exaGetDrawableDeltas(pSrcDrawable, pSrcPixmap, &src_off_x, &src_off_y);
     exaGetDrawableDeltas(pDstDrawable, pDstPixmap, &dst_off_x, &dst_off_y);
 
-    rects = malloc(nbox * sizeof(xRectangle));
+    rects = xallocarray(nbox, sizeof(xRectangle));
 
     if (rects) {
         int i;
@@ -413,7 +413,7 @@ exaHWCopyNtoN(DrawablePtr pSrcDrawable,
 
         if (!pGC || !exaGCReadsDestination(pDstDrawable, pGC->planemask,
                                            pGC->fillStyle, pGC->alu,
-                                           pGC->clientClipType)) {
+                                           pGC->clientClip != NULL)) {
             dstregion = RegionCreate(NullBox, 0);
             RegionCopy(dstregion, srcregion);
             RegionTranslate(dstregion, dst_off_x - dx - src_off_x,
@@ -626,7 +626,7 @@ exaPolyPoint(DrawablePtr pDrawable, GCPtr pGC, int mode, int npt,
         return;
     }
 
-    prect = malloc(sizeof(xRectangle) * npt);
+    prect = xallocarray(npt, sizeof(xRectangle));
     for (i = 0; i < npt; i++) {
         prect[i].x = ppt[i].x;
         prect[i].y = ppt[i].y;
@@ -667,7 +667,7 @@ exaPolylines(DrawablePtr pDrawable, GCPtr pGC, int mode, int npt,
         return;
     }
 
-    prect = malloc(sizeof(xRectangle) * (npt - 1));
+    prect = xallocarray(npt - 1, sizeof(xRectangle));
     x1 = ppt[0].x;
     y1 = ppt[0].y;
     /* If we have any non-horizontal/vertical, fall back. */
@@ -738,7 +738,7 @@ exaPolySegment(DrawablePtr pDrawable, GCPtr pGC, int nseg, xSegment * pSeg)
         }
     }
 
-    prect = malloc(sizeof(xRectangle) * nseg);
+    prect = xallocarray(nseg, sizeof(xRectangle));
     for (i = 0; i < nseg; i++) {
         if (pSeg[i].x1 < pSeg[i].x2) {
             prect[i].x = pSeg[i].x1;
@@ -771,7 +771,7 @@ exaPolySegment(DrawablePtr pDrawable, GCPtr pGC, int nseg, xSegment * pSeg)
 
 static Bool exaFillRegionSolid(DrawablePtr pDrawable, RegionPtr pRegion,
                                Pixel pixel, CARD32 planemask, CARD32 alu,
-                               unsigned int clientClipType);
+                               Bool hasClientClip);
 
 static void
 exaPolyFillRect(DrawablePtr pDrawable, GCPtr pGC, int nrect, xRectangle *prect)
@@ -816,11 +816,11 @@ exaPolyFillRect(DrawablePtr pDrawable, GCPtr pGC, int nrect, xRectangle *prect)
         if (((pGC->fillStyle == FillSolid || pGC->tileIsPixel) &&
              exaFillRegionSolid(pDrawable, pReg, pGC->fillStyle == FillSolid ?
                                 pGC->fgPixel : pGC->tile.pixel, pGC->planemask,
-                                pGC->alu, pGC->clientClipType)) ||
+                                pGC->alu, pGC->clientClip != NULL)) ||
             (pGC->fillStyle == FillTiled && !pGC->tileIsPixel &&
              exaFillRegionTiled(pDrawable, pReg, pGC->tile.pixmap, &pGC->patOrg,
                                 pGC->planemask, pGC->alu,
-                                pGC->clientClipType))) {
+                                pGC->clientClip != NULL))) {
             goto out;
         }
     }
@@ -990,7 +990,7 @@ exaCopyWindow(WindowPtr pWin, DDXPointRec ptOldOrg, RegionPtr prgnSrc)
 
 static Bool
 exaFillRegionSolid(DrawablePtr pDrawable, RegionPtr pRegion, Pixel pixel,
-                   CARD32 planemask, CARD32 alu, unsigned int clientClipType)
+                   CARD32 planemask, CARD32 alu, Bool hasClientClip)
 {
     ExaScreenPriv(pDrawable->pScreen);
     PixmapPtr pPixmap = exaGetDrawablePixmap(pDrawable);
@@ -1013,8 +1013,7 @@ exaFillRegionSolid(DrawablePtr pDrawable, RegionPtr pRegion, Pixel pixel,
         pixmaps[0].pPix = pPixmap;
         pixmaps[0].pReg = exaGCReadsDestination(pDrawable, planemask, FillSolid,
                                                 alu,
-                                                clientClipType) ? NULL :
-            pRegion;
+                                                hasClientClip) ? NULL : pRegion;
 
         exaDoMigration(pixmaps, 1, TRUE);
     }
@@ -1038,7 +1037,7 @@ exaFillRegionSolid(DrawablePtr pDrawable, RegionPtr pRegion, Pixel pixel,
         if (pExaPixmap->pDamage &&
             pExaPixmap->sys_ptr && pDrawable->type == DRAWABLE_PIXMAP &&
             pDrawable->width == 1 && pDrawable->height == 1 &&
-            pDrawable->bitsPerPixel != 24) {
+            pDrawable->bitsPerPixel != 24 && alu == GXcopy) {
             RegionPtr pending_damage = DamagePendingRegion(pExaPixmap->pDamage);
 
             switch (pDrawable->bitsPerPixel) {
@@ -1074,7 +1073,7 @@ exaFillRegionSolid(DrawablePtr pDrawable, RegionPtr pRegion, Pixel pixel,
 Bool
 exaFillRegionTiled(DrawablePtr pDrawable, RegionPtr pRegion, PixmapPtr pTile,
                    DDXPointPtr pPatOrg, CARD32 planemask, CARD32 alu,
-                   unsigned int clientClipType)
+                   Bool hasClientClip)
 {
     ExaScreenPriv(pDrawable->pScreen);
     PixmapPtr pPixmap;
@@ -1096,7 +1095,7 @@ exaFillRegionTiled(DrawablePtr pDrawable, RegionPtr pRegion, PixmapPtr pTile,
     if (tileWidth == 1 && tileHeight == 1)
         return exaFillRegionSolid(pDrawable, pRegion,
                                   exaGetPixmapFirstPixel(pTile), planemask,
-                                  alu, clientClipType);
+                                  alu, hasClientClip);
 
     pPixmap = exaGetDrawablePixmap(pDrawable);
     pExaPixmap = ExaGetPixmapPriv(pPixmap);
@@ -1113,8 +1112,7 @@ exaFillRegionTiled(DrawablePtr pDrawable, RegionPtr pRegion, PixmapPtr pTile,
         pixmaps[0].pPix = pPixmap;
         pixmaps[0].pReg = exaGCReadsDestination(pDrawable, planemask, FillTiled,
                                                 alu,
-                                                clientClipType) ? NULL :
-            pRegion;
+                                                hasClientClip) ? NULL : pRegion;
         pixmaps[1].as_dst = FALSE;
         pixmaps[1].as_src = TRUE;
         pixmaps[1].pPix = pTile;

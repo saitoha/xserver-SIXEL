@@ -6,19 +6,19 @@ software and its documentation for any purpose and without
 fee is hereby granted, provided that the above copyright
 notice appear in all copies and that both that copyright
 notice and this permission notice appear in supporting
-documentation, and that the name of Silicon Graphics not be 
-used in advertising or publicity pertaining to distribution 
+documentation, and that the name of Silicon Graphics not be
+used in advertising or publicity pertaining to distribution
 of the software without specific prior written permission.
-Silicon Graphics makes no representation about the suitability 
+Silicon Graphics makes no representation about the suitability
 of this software for any purpose. It is provided "as is"
 without any express or implied warranty.
 
-SILICON GRAPHICS DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS 
-SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY 
+SILICON GRAPHICS DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS
+SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
 AND FITNESS FOR A PARTICULAR PURPOSE. IN NO EVENT SHALL SILICON
-GRAPHICS BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL 
-DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, 
-DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE 
+GRAPHICS BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE,
+DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE
 OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION  WITH
 THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
@@ -89,6 +89,7 @@ AccessXInit(DeviceIntPtr keybd)
     xkbi->repeatKeyTimer = NULL;
     xkbi->krgTimer = NULL;
     xkbi->beepTimer = NULL;
+    xkbi->checkRepeat = NULL;
     ctrls->repeat_delay = XkbDfltRepeatDelay;
     ctrls->repeat_interval = XkbDfltRepeatInterval;
     ctrls->debounce_delay = 300;
@@ -126,7 +127,7 @@ AccessXKeyboardEvent(DeviceIntPtr keybd, int type, BYTE keyCode, Bool isRepeat)
 {
     DeviceEvent event;
 
-    init_device_event(&event, keybd, GetTimeInMillis());
+    init_device_event(&event, keybd, GetTimeInMillis(), EVENT_SOURCE_NORMAL);
     event.type = type;
     event.detail.key = keyCode;
     event.key_repeat = isRepeat;
@@ -317,7 +318,8 @@ AccessXRepeatKeyExpire(OsTimerPtr timer, CARD32 now, void *arg)
     if (xkbi->repeatKey == 0)
         return 0;
 
-    AccessXKeyboardEvent(dev, ET_KeyPress, xkbi->repeatKey, TRUE);
+    if (xkbi->checkRepeat == NULL || xkbi->checkRepeat (dev, xkbi, xkbi->repeatKey))
+        AccessXKeyboardEvent(dev, ET_KeyPress, xkbi->repeatKey, TRUE);
 
     return xkbi->desc->ctrls->repeat_interval;
 }
@@ -598,7 +600,7 @@ AccessXFilterReleaseEvent(DeviceEvent *event, DeviceIntPtr keybd)
     Bool ignoreKeyEvent = FALSE;
 
     /* Don't transmit the KeyRelease if BounceKeys is on and
-     * this is the release of a key that was ignored due to 
+     * this is the release of a key that was ignored due to
      * BounceKeys.
      */
     if (ctrls->enabled_ctrls & XkbBounceKeysMask) {
@@ -618,6 +620,7 @@ AccessXFilterReleaseEvent(DeviceEvent *event, DeviceIntPtr keybd)
     if (ctrls->enabled_ctrls & XkbSlowKeysMask) {
         xkbAccessXNotify ev;
         unsigned beep_type;
+        unsigned mask;
 
         ev.keycode = key;
         ev.slowKeysDelay = ctrls->slow_keys_delay;
@@ -625,14 +628,16 @@ AccessXFilterReleaseEvent(DeviceEvent *event, DeviceIntPtr keybd)
         if (BitIsOn(keybd->key->down, key) || (xkbi->mouseKey == key)) {
             ev.detail = XkbAXN_SKRelease;
             beep_type = _BEEP_SLOW_RELEASE;
+            mask = XkbAX_SKReleaseFBMask;
         }
         else {
             ev.detail = XkbAXN_SKReject;
             beep_type = _BEEP_SLOW_REJECT;
+            mask = XkbAX_SKRejectFBMask;
             ignoreKeyEvent = TRUE;
         }
         XkbSendAccessXNotify(keybd, &ev);
-        if (XkbAX_NeedFeedback(ctrls, XkbAX_SKRejectFBMask)) {
+        if (XkbAX_NeedFeedback(ctrls, mask)) {
             XkbDDXAccessXBeep(keybd, beep_type, XkbSlowKeysMask);
         }
         if (xkbi->slowKey == key)

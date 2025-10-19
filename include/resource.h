@@ -26,13 +26,13 @@ Copyright 1987, 1989 by Digital Equipment Corporation, Maynard, Massachusetts.
 
                         All Rights Reserved
 
-Permission to use, copy, modify, and distribute this software and its 
-documentation for any purpose and without fee is hereby granted, 
+Permission to use, copy, modify, and distribute this software and its
+documentation for any purpose and without fee is hereby granted,
 provided that the above copyright notice appear in all copies and that
-both that copyright notice and this permission notice appear in 
+both that copyright notice and this permission notice appear in
 supporting documentation, and that the name of Digital not be
 used in advertising or publicity pertaining to distribution of the
-software without specific, written prior permission.  
+software without specific, written prior permission.
 
 DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
 ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
@@ -50,7 +50,7 @@ SOFTWARE.
 #include "dixaccess.h"
 
 /*****************************************************************
- * STUFF FOR RESOURCES 
+ * STUFF FOR RESOURCES
  *****************************************************************/
 
 /* classes for Resource routines */
@@ -85,21 +85,10 @@ typedef uint32_t RESTYPE;
 #define RT_LASTPREDEF	((RESTYPE)9)
 #define RT_NONE		((RESTYPE)0)
 
+extern _X_EXPORT unsigned int ResourceClientBits(void);
 /* bits and fields within a resource id */
 #define RESOURCE_AND_CLIENT_COUNT   29  /* 29 bits for XIDs */
-#if MAXCLIENTS == 64
-#define RESOURCE_CLIENT_BITS	6
-#endif
-#if MAXCLIENTS == 128
-#define RESOURCE_CLIENT_BITS	7
-#endif
-#if MAXCLIENTS == 256
-#define RESOURCE_CLIENT_BITS	8
-#endif
-#if MAXCLIENTS == 512
-#define RESOURCE_CLIENT_BITS	9
-#endif
-/* client field offset */
+#define RESOURCE_CLIENT_BITS        ResourceClientBits() /* client field offset */
 #define CLIENTOFFSET	    (RESOURCE_AND_CLIENT_COUNT - RESOURCE_CLIENT_BITS)
 /* resource field */
 #define RESOURCE_ID_MASK	((1 << CLIENTOFFSET) - 1)

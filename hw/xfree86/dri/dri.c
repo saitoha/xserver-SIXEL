@@ -158,9 +158,6 @@ DRIOpenDRMMaster(ScrnInfoPtr pScrn,
     Bool drmWasAvailable;
     DRIEntPrivPtr pDRIEntPriv;
     DRIEntPrivRec tmp;
-    drmVersionPtr drmlibv;
-    int drmlibmajor, drmlibminor;
-    const char *openBusID;
     int count;
     int err;
 
@@ -176,23 +173,6 @@ DRIOpenDRMMaster(ScrnInfoPtr pScrn,
 
     memset(&tmp, 0, sizeof(tmp));
 
-    /* Check the DRM lib version.
-     */
-
-    drmlibmajor = 1;
-    drmlibminor = 0;
-    drmlibv = drmGetLibVersion(-1);
-    if (drmlibv != NULL) {
-        drmlibmajor = drmlibv->version_major;
-        drmlibminor = drmlibv->version_minor;
-        drmFreeVersion(drmlibv);
-    }
-
-    /* Check if the libdrm can handle falling back to loading based on name
-     * if a busid string is passed.
-     */
-    openBusID = (drmlibmajor == 1 && drmlibminor >= 2) ? busID : NULL;
-
     tmp.drmFD = -1;
     sv.drm_di_major = 1;
     sv.drm_di_minor = 1;
@@ -201,7 +181,7 @@ DRIOpenDRMMaster(ScrnInfoPtr pScrn,
     saveSv = sv;
     count = 10;
     while (count--) {
-        tmp.drmFD = drmOpen(drmDriverName, openBusID);
+        tmp.drmFD = drmOpen(drmDriverName, busID);
 
         if (tmp.drmFD < 0) {
             DRIDrvMsg(-1, X_ERROR, "[drm] drmOpen failed.\n");
@@ -308,6 +288,68 @@ dri_crtc_notify(ScreenPtr pScreen)
     xf86_crtc_notify(pScreen);
     pDRIPriv->xf86_crtc_notify =
         xf86_wrap_crtc_notify(pScreen, dri_crtc_notify);
+}
+
+static void
+drmSIGIOHandler(int interrupt, void *closure)
+{
+    unsigned long key;
+    void *value;
+    ssize_t count;
+    drm_ctx_t ctx;
+    typedef void (*_drmCallback) (int, void *, void *);
+    char buf[256];
+    drm_context_t old;
+    drm_context_t new;
+    void *oldctx;
+    void *newctx;
+    char *pt;
+    drmHashEntry *entry;
+    void *hash_table;
+
+    hash_table = drmGetHashTable();
+
+    if (!hash_table)
+        return;
+    if (drmHashFirst(hash_table, &key, &value)) {
+        entry = value;
+        do {
+            if ((count = read(entry->fd, buf, sizeof(buf) - 1)) > 0) {
+                buf[count] = '\0';
+
+                for (pt = buf; *pt != ' '; ++pt);       /* Find first space */
+                ++pt;
+                old = strtol(pt, &pt, 0);
+                new = strtol(pt, NULL, 0);
+                oldctx = drmGetContextTag(entry->fd, old);
+                newctx = drmGetContextTag(entry->fd, new);
+                ((_drmCallback) entry->f) (entry->fd, oldctx, newctx);
+                ctx.handle = new;
+                ioctl(entry->fd, DRM_IOCTL_NEW_CTX, &ctx);
+            }
+        } while (drmHashNext(hash_table, &key, &value));
+    }
+}
+
+static int
+drmInstallSIGIOHandler(int fd, void (*f) (int, void *, void *))
+{
+    drmHashEntry *entry;
+
+    entry = drmGetEntry(fd);
+    entry->f = f;
+
+    return xf86InstallSIGIOHandler(fd, drmSIGIOHandler, 0);
+}
+
+static int
+drmRemoveSIGIOHandler(int fd)
+{
+    drmHashEntry *entry = drmGetEntry(fd);
+
+    entry->f = NULL;
+
+    return xf86RemoveSIGIOHandler(fd);
 }
 
 Bool
@@ -1032,7 +1074,8 @@ DRICreateContext(ScreenPtr pScreen, VisualPtr visual,
     }
 
     /* track this in case the client dies before cleanup */
-    AddResource(context, DRIContextPrivResType, (void *) pDRIContextPriv);
+    if (!AddResource(context, DRIContextPrivResType, (void *) pDRIContextPriv))
+        return FALSE;
 
     return TRUE;
 }
@@ -1263,8 +1306,9 @@ DRICreateDrawable(ScreenPtr pScreen, ClientPtr client, DrawablePtr pDrawable,
         }
 
         /* track this in case the client dies */
-        AddResource(FakeClientID(client->index), DRIDrawablePrivResType,
-                    (void *) (intptr_t) pDrawable->id);
+        if (!AddResource(FakeClientID(client->index), DRIDrawablePrivResType,
+                         (void *) (intptr_t) pDrawable->id))
+            return FALSE;
 
         if (pDRIDrawablePriv->hwDrawable) {
             drmUpdateDrawableInfo(pDRIPriv->drmFD,
@@ -1603,7 +1647,7 @@ DRIDestroyInfoRec(DRIInfoPtr DRIInfo)
 }
 
 void
-DRIWakeupHandler(void *wakeupData, int result, void *pReadmask)
+DRIWakeupHandler(void *wakeupData, int result)
 {
     int i;
 
@@ -1612,13 +1656,12 @@ DRIWakeupHandler(void *wakeupData, int result, void *pReadmask)
         DRIScreenPrivPtr pDRIPriv = DRI_SCREEN_PRIV(pScreen);
 
         if (pDRIPriv && pDRIPriv->pDriverInfo->wrap.WakeupHandler)
-            (*pDRIPriv->pDriverInfo->wrap.WakeupHandler) (pScreen,
-                                                          result, pReadmask);
+            (*pDRIPriv->pDriverInfo->wrap.WakeupHandler) (pScreen, result);
     }
 }
 
 void
-DRIBlockHandler(void *blockData, OSTimePtr pTimeout, void *pReadmask)
+DRIBlockHandler(void *blockData, void *pTimeout)
 {
     int i;
 
@@ -1627,14 +1670,12 @@ DRIBlockHandler(void *blockData, OSTimePtr pTimeout, void *pReadmask)
         DRIScreenPrivPtr pDRIPriv = DRI_SCREEN_PRIV(pScreen);
 
         if (pDRIPriv && pDRIPriv->pDriverInfo->wrap.BlockHandler)
-            (*pDRIPriv->pDriverInfo->wrap.BlockHandler) (pScreen,
-                                                         pTimeout, pReadmask);
+            (*pDRIPriv->pDriverInfo->wrap.BlockHandler) (pScreen, pTimeout);
     }
 }
 
 void
-DRIDoWakeupHandler(ScreenPtr pScreen,
-                   unsigned long result, void *pReadmask)
+DRIDoWakeupHandler(ScreenPtr pScreen, int result)
 {
     DRIScreenPrivPtr pDRIPriv = DRI_SCREEN_PRIV(pScreen);
 
@@ -1651,8 +1692,7 @@ DRIDoWakeupHandler(ScreenPtr pScreen,
 }
 
 void
-DRIDoBlockHandler(ScreenPtr pScreen,
-                  void *pTimeout, void *pReadmask)
+DRIDoBlockHandler(ScreenPtr pScreen, void *timeout)
 {
     DRIScreenPrivPtr pDRIPriv = DRI_SCREEN_PRIV(pScreen);
 
@@ -1691,7 +1731,7 @@ DRISwapContext(int drmFD, void *oldctx, void *newctx)
 
     if (!newContext) {
         DRIDrvMsg(pScreen->myNum, X_ERROR,
-                  "[DRI] Context Switch Error: oldContext=%x, newContext=%x\n",
+                  "[DRI] Context Switch Error: oldContext=%p, newContext=%p\n",
                   oldContext, newContext);
         return;
     }
@@ -1828,7 +1868,7 @@ DRIGetContextStore(DRIContextPrivPtr context)
 }
 
 void
-DRIWindowExposures(WindowPtr pWin, RegionPtr prgn, RegionPtr bsreg)
+DRIWindowExposures(WindowPtr pWin, RegionPtr prgn)
 {
     ScreenPtr pScreen = pWin->drawable.pScreen;
     DRIScreenPrivPtr pDRIPriv = DRI_SCREEN_PRIV(pScreen);
@@ -1846,7 +1886,7 @@ DRIWindowExposures(WindowPtr pWin, RegionPtr prgn, RegionPtr bsreg)
         pScreen->WindowExposures = pDRIPriv->wrap.WindowExposures;
 
         /* call lower layers */
-        (*pScreen->WindowExposures) (pWin, prgn, bsreg);
+        (*pScreen->WindowExposures) (pWin, prgn);
 
         /* rewrap */
         pDRIPriv->wrap.WindowExposures = pScreen->WindowExposures;
@@ -2292,11 +2332,11 @@ DRIAdjustFrame(ScrnInfoPtr pScrn, int x, int y)
     _DRIAdjustFrame(pScrn, pDRIPriv, x, y);
 }
 
-/* 
+/*
  * DRIMoveBuffersHelper swaps the regions rects in place leaving you
  * a region with the rects in the order that you need to blit them,
  * but it is possibly (likely) an invalid region afterwards.  If you
- * need to use the region again for anything you have to call 
+ * need to use the region again for anything you have to call
  * REGION_VALIDATE on it, or better yet, save a copy first.
  */
 
@@ -2363,87 +2403,4 @@ DRIMoveBuffersHelper(ScreenPtr pScreen,
     else
         *xdir = 1;
 
-}
-
-char *
-DRICreatePCIBusID(const struct pci_device *dev)
-{
-    char *busID;
-
-    if (asprintf(&busID, "pci:%04x:%02x:%02x.%d",
-                 dev->domain, dev->bus, dev->dev, dev->func) == -1)
-        return NULL;
-
-    return busID;
-}
-
-static void
-drmSIGIOHandler(int interrupt, void *closure)
-{
-    unsigned long key;
-    void *value;
-    ssize_t count;
-    drm_ctx_t ctx;
-    typedef void (*_drmCallback) (int, void *, void *);
-    char buf[256];
-    drm_context_t old;
-    drm_context_t new;
-    void *oldctx;
-    void *newctx;
-    char *pt;
-    drmHashEntry *entry;
-    void *hash_table;
-
-    hash_table = drmGetHashTable();
-
-    if (!hash_table)
-        return;
-    if (drmHashFirst(hash_table, &key, &value)) {
-        entry = value;
-        do {
-#if 0
-            fprintf(stderr, "Trying %d\n", entry->fd);
-#endif
-            if ((count = read(entry->fd, buf, sizeof(buf) - 1)) > 0) {
-                buf[count] = '\0';
-#if 0
-                fprintf(stderr, "Got %s\n", buf);
-#endif
-
-                for (pt = buf; *pt != ' '; ++pt);       /* Find first space */
-                ++pt;
-                old = strtol(pt, &pt, 0);
-                new = strtol(pt, NULL, 0);
-                oldctx = drmGetContextTag(entry->fd, old);
-                newctx = drmGetContextTag(entry->fd, new);
-#if 0
-                fprintf(stderr, "%d %d %p %p\n", old, new, oldctx, newctx);
-#endif
-                ((_drmCallback) entry->f) (entry->fd, oldctx, newctx);
-                ctx.handle = new;
-                ioctl(entry->fd, DRM_IOCTL_NEW_CTX, &ctx);
-            }
-        } while (drmHashNext(hash_table, &key, &value));
-    }
-}
-
-int
-drmInstallSIGIOHandler(int fd, void (*f) (int, void *, void *))
-{
-    drmHashEntry *entry;
-
-    entry = drmGetEntry(fd);
-    entry->f = f;
-
-    return xf86InstallSIGIOHandler(fd, drmSIGIOHandler, 0);
-}
-
-int
-drmRemoveSIGIOHandler(int fd)
-{
-    drmHashEntry *entry = drmGetEntry(fd);
-
-    entry->f = NULL;
-
-    return xf86RemoveSIGIOHandler(fd);
 }

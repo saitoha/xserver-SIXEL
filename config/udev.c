@@ -69,6 +69,24 @@ static const char *itoa(int i)
     return itoa_buf;
 }
 
+static Bool
+check_seat(struct udev_device *udev_device)
+{
+    const char *dev_seat;
+
+    dev_seat = udev_device_get_property_value(udev_device, "ID_SEAT");
+    if (!dev_seat)
+        dev_seat = "seat0";
+
+    if (SeatId && strcmp(dev_seat, SeatId))
+        return FALSE;
+
+    if (!SeatId && strcmp(dev_seat, "seat0"))
+        return FALSE;
+
+    return TRUE;
+}
+
 static void
 device_added(struct udev_device *udev_device)
 {
@@ -83,7 +101,6 @@ device_added(struct udev_device *udev_device)
     struct udev_list_entry *set, *entry;
     struct udev_device *parent;
     int rc;
-    const char *dev_seat;
     dev_t devnum;
 
     path = udev_device_get_devnode(udev_device);
@@ -93,14 +110,7 @@ device_added(struct udev_device *udev_device)
     if (!path || !syspath)
         return;
 
-    dev_seat = udev_device_get_property_value(udev_device, "ID_SEAT");
-    if (!dev_seat)
-        dev_seat = "seat0";
-
-    if (SeatId && strcmp(dev_seat, SeatId))
-        return;
-
-    if (!SeatId && strcmp(dev_seat, "seat0"))
+    if (!check_seat(udev_device))
         return;
 
     devnum = udev_device_get_devnum(udev_device);
@@ -124,7 +134,8 @@ device_added(struct udev_device *udev_device)
     }
 #endif
 
-    if (!udev_device_get_property_value(udev_device, "ID_INPUT")) {
+    value = udev_device_get_property_value(udev_device, "ID_INPUT");
+    if (!value || !strcmp(value, "0")) {
         LogMessageVerb(X_INFO, 10,
                        "config/udev: ignoring device %s without "
                        "property ID_INPUT set\n", path);
@@ -227,30 +238,36 @@ device_added(struct udev_device *udev_device)
         else if (!strcmp(key, "ID_VENDOR")) {
             LOG_PROPERTY(path, key, value);
             attrs.vendor = strdup(value);
-        }
-        else if (!strcmp(key, "ID_INPUT_KEY")) {
-            LOG_PROPERTY(path, key, value);
-            attrs.flags |= ATTR_KEYBOARD;
-        }
-        else if (!strcmp(key, "ID_INPUT_MOUSE")) {
-            LOG_PROPERTY(path, key, value);
-            attrs.flags |= ATTR_POINTER;
-        }
-        else if (!strcmp(key, "ID_INPUT_JOYSTICK")) {
-            LOG_PROPERTY(path, key, value);
-            attrs.flags |= ATTR_JOYSTICK;
-        }
-        else if (!strcmp(key, "ID_INPUT_TABLET")) {
-            LOG_PROPERTY(path, key, value);
-            attrs.flags |= ATTR_TABLET;
-        }
-        else if (!strcmp(key, "ID_INPUT_TOUCHPAD")) {
-            LOG_PROPERTY(path, key, value);
-            attrs.flags |= ATTR_TOUCHPAD;
-        }
-        else if (!strcmp(key, "ID_INPUT_TOUCHSCREEN")) {
-            LOG_PROPERTY(path, key, value);
-            attrs.flags |= ATTR_TOUCHSCREEN;
+        } else if (!strncmp(key, "ID_INPUT_", 9)) {
+            const struct pfmap {
+                const char *property;
+                unsigned int flag;
+            } map[] = {
+                { "ID_INPUT_KEY", ATTR_KEY },
+                { "ID_INPUT_KEYBOARD", ATTR_KEYBOARD },
+                { "ID_INPUT_MOUSE", ATTR_POINTER },
+                { "ID_INPUT_JOYSTICK", ATTR_JOYSTICK },
+                { "ID_INPUT_TABLET", ATTR_TABLET },
+                { "ID_INPUT_TABLET_PAD", ATTR_TABLET_PAD },
+                { "ID_INPUT_TOUCHPAD", ATTR_TOUCHPAD },
+                { "ID_INPUT_TOUCHSCREEN", ATTR_TOUCHSCREEN },
+                { NULL, 0 },
+            };
+
+            /* Anything but the literal string "0" is considered a
+             * boolean true. The empty string isn't a thing with udev
+             * properties anyway */
+            if (value && strcmp(value, "0")) {
+                const struct pfmap *m = map;
+
+                while (m->property != NULL) {
+                    if (!strcmp(m->property, key)) {
+                        LOG_PROPERTY(path, key, value);
+                        attrs.flags |= m->flag;
+                    }
+                    m++;
+                }
+            }
         }
     }
 
@@ -300,12 +317,11 @@ device_removed(struct udev_device *device)
         const char *path = udev_device_get_devnode(device);
         dev_t devnum = udev_device_get_devnum(device);
 
-        if (strncmp(sysname,"card", 4) != 0)
-            return;
-        ErrorF("removing GPU device %s %s\n", syspath, path);
-        if (!path)
+        if ((strncmp(sysname,"card", 4) != 0) || (path == NULL))
             return;
 
+        LogMessage(X_INFO, "config/udev: removing GPU device %s %s\n",
+                   syspath, path);
         config_udev_odev_setup_attribs(path, syspath, major(devnum),
                                        minor(devnum), DeleteGPUDeviceRequest);
         /* Retry vtenter after a drm node removal */
@@ -323,41 +339,34 @@ device_removed(struct udev_device *device)
 }
 
 static void
-wakeup_handler(void *data, int err, void *read_mask)
+socket_handler(int fd, int ready, void *data)
 {
-    int udev_fd = udev_monitor_get_fd(udev_monitor);
     struct udev_device *udev_device;
     const char *action;
 
-    if (err < 0)
+    input_lock();
+    udev_device = udev_monitor_receive_device(udev_monitor);
+    if (!udev_device) {
+        input_unlock();
         return;
-
-    if (FD_ISSET(udev_fd, (fd_set *) read_mask)) {
-        udev_device = udev_monitor_receive_device(udev_monitor);
-        if (!udev_device)
-            return;
-        action = udev_device_get_action(udev_device);
-        if (action) {
-            if (!strcmp(action, "add")) {
+    }
+    action = udev_device_get_action(udev_device);
+    if (action) {
+        if (!strcmp(action, "add")) {
+            device_removed(udev_device);
+            device_added(udev_device);
+        } else if (!strcmp(action, "change")) {
+            /* ignore change for the drm devices */
+            if (strcmp(udev_device_get_subsystem(udev_device), "drm")) {
                 device_removed(udev_device);
                 device_added(udev_device);
-            } else if (!strcmp(action, "change")) {
-                /* ignore change for the drm devices */
-                if (strcmp(udev_device_get_subsystem(udev_device), "drm")) {
-                    device_removed(udev_device);
-                    device_added(udev_device);
-                }
             }
-            else if (!strcmp(action, "remove"))
-                device_removed(udev_device);
         }
-        udev_device_unref(udev_device);
+        else if (!strcmp(action, "remove"))
+            device_removed(udev_device);
     }
-}
-
-static void
-block_handler(void *data, struct timeval **tv, void *read_mask)
-{
+    udev_device_unref(udev_device);
+    input_unlock();
 }
 
 int
@@ -432,8 +441,7 @@ config_udev_init(void)
     }
     udev_enumerate_unref(enumerate);
 
-    RegisterBlockAndWakeupHandlers(block_handler, wakeup_handler, NULL);
-    AddGeneralSocket(udev_monitor_get_fd(udev_monitor));
+    SetNotifyFd(udev_monitor_get_fd(udev_monitor), socket_handler, X_NOTIFY_READ, NULL);
 
     return 1;
 }
@@ -448,8 +456,7 @@ config_udev_fini(void)
 
     udev = udev_monitor_get_udev(udev_monitor);
 
-    RemoveGeneralSocket(udev_monitor_get_fd(udev_monitor));
-    RemoveBlockAndWakeupHandlers(block_handler, wakeup_handler, NULL);
+    RemoveNotifyFd(udev_monitor_get_fd(udev_monitor));
     udev_monitor_unref(udev_monitor);
     udev_monitor = NULL;
     udev_unref(udev);
@@ -505,6 +512,8 @@ config_udev_odev_probe(config_odev_probe_proc_ptr probe_callback)
         else if (strcmp(udev_device_get_subsystem(udev_device), "drm") != 0)
             goto no_probe;
         else if (strncmp(sysname, "card", 4) != 0)
+            goto no_probe;
+        else if (!check_seat(udev_device))
             goto no_probe;
 
         config_udev_odev_setup_attribs(path, syspath, major(devnum),

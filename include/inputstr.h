@@ -26,13 +26,13 @@ Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
 
                         All Rights Reserved
 
-Permission to use, copy, modify, and distribute this software and its 
-documentation for any purpose and without fee is hereby granted, 
+Permission to use, copy, modify, and distribute this software and its
+documentation for any purpose and without fee is hereby granted,
 provided that the above copyright notice appear in all copies and that
-both that copyright notice and this permission notice appear in 
+both that copyright notice and this permission notice appear in
 supporting documentation, and that the name of Digital not be
 used in advertising or publicity pertaining to distribution of the
-software without specific, written prior permission.  
+software without specific, written prior permission.
 
 DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
 ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
@@ -56,6 +56,10 @@ SOFTWARE.
 #include "cursorstr.h"
 #include "geext.h"
 #include "privates.h"
+
+extern _X_EXPORT void AssignTypeAndName(DeviceIntPtr dev,
+                                        Atom type,
+                                        const char *name);
 
 #define BitIsOn(ptr, bit) (!!(((const BYTE *) (ptr))[(bit)>>3] & (1 << ((bit) & 7))))
 #define SetBit(ptr, bit)  (((BYTE *) (ptr))[(bit)>>3] |= (1 << ((bit) & 7)))
@@ -159,7 +163,7 @@ typedef struct _OtherInputMasks {
  */
 
 #define MasksPerDetailMask 8    /* 256 keycodes and 256 possible
-                                   modifier combinations, but only      
+                                   modifier combinations, but only
                                    3 buttons. */
 
 typedef struct _DetailRec {     /* Grab details may be bit masks */
@@ -174,9 +178,9 @@ union _GrabMask {
 };
 
 /**
- * Central struct for device grabs. 
+ * Central struct for device grabs.
  * The same struct is used for both core grabs and device grabs, with
- * different fields being set. 
+ * different fields being set.
  * If the grab is a core grab (GrabPointer/GrabKeyboard), then the eventMask
  * is a combination of standard event masks (i.e. PointerMotionMask |
  * ButtonPressMask).
@@ -515,7 +519,6 @@ typedef struct _SpriteInfoRec {
         CursorPtr pCursor;
         ScreenPtr pScreen;
         int elt;
-        CARD32 time;
     } anim;
 } SpriteInfoRec, *SpriteInfoPtr;
 

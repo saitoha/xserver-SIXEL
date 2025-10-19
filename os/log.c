@@ -85,6 +85,7 @@ OR PERFORMANCE OF THIS SOFTWARE.
 #include <sys/stat.h>
 #include <stdarg.h>
 #include <stdlib.h>             /* for malloc() */
+#include <errno.h>
 
 #include "input.h"
 #include "site.h"
@@ -120,18 +121,11 @@ static int bufferSize = 0, bufferUnused = 0, bufferPos = 0;
 static Bool needBuffer = TRUE;
 
 #ifdef __APPLE__
-#include <AvailabilityMacros.h>
-
 static char __crashreporter_info_buff__[4096] = { 0 };
 
 static const char *__crashreporter_info__ __attribute__ ((__used__)) =
     &__crashreporter_info_buff__[0];
-#if MAC_OS_X_VERSION_MIN_REQUIRED >= 1050
-// This is actually a toolchain requirement, but I'm not sure the correct check,        
-// but it should be fine to just only include it for Leopard and later.  This line
-// just tells the linker to never strip this symbol (such as for space optimization)
 asm(".desc ___crashreporter_info__, 0x10");
-#endif
 #endif
 
 /* Prefix strings for log messages. */
@@ -181,13 +175,66 @@ strlen_sigsafe(const char *s)
 }
 
 /*
+ * LogFilePrep is called to setup files for logging, including getting
+ * an old file out of the way, but it doesn't actually open the file,
+ * since it may be used for renaming a file we're already logging to.
+ */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
+
+static char *
+LogFilePrep(const char *fname, const char *backup, const char *idstring)
+{
+    char *logFileName = NULL;
+
+    /* the format string below is controlled by the user,
+       this code should never be called with elevated privileges */
+    if (asprintf(&logFileName, fname, idstring) == -1)
+        FatalError("Cannot allocate space for the log file name\n");
+
+    if (backup && *backup) {
+        struct stat buf;
+
+        if (!stat(logFileName, &buf) && S_ISREG(buf.st_mode)) {
+            char *suffix;
+            char *oldLog;
+
+            if ((asprintf(&suffix, backup, idstring) == -1) ||
+                (asprintf(&oldLog, "%s%s", logFileName, suffix) == -1)) {
+                FatalError("Cannot allocate space for the log file name\n");
+            }
+            free(suffix);
+
+            if (rename(logFileName, oldLog) == -1) {
+                FatalError("Cannot move old log file \"%s\" to \"%s\"\n",
+                           logFileName, oldLog);
+            }
+            free(oldLog);
+        }
+    }
+    else {
+        if (remove(logFileName) != 0 && errno != ENOENT) {
+            FatalError("Cannot remove old log file \"%s\": %s\n",
+                       logFileName, strerror(errno));
+        }
+    }
+
+    return logFileName;
+}
+#pragma GCC diagnostic pop
+
+/*
  * LogInit is called to start logging to a file.  It is also called (with
  * NULL arguments) when logging to a file is not wanted.  It must always be
  * called, otherwise log messages will continue to accumulate in a buffer.
  *
  * %s, if present in the fname or backup strings, is expanded to the display
- * string.
+ * string (or to a string containing the pid if the display is not yet set).
  */
+
+static char *saved_log_fname;
+static char *saved_log_backup;
+static char *saved_log_tempname;
 
 const char *
 LogInit(const char *fname, const char *backup)
@@ -195,36 +242,22 @@ LogInit(const char *fname, const char *backup)
     char *logFileName = NULL;
 
     if (fname && *fname) {
-#if __GNUC__ > 4 || __GNUC__ == 4 && __GNUC_MINOR__ > 5
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-        if (asprintf(&logFileName, fname, display) == -1)
-            FatalError("Cannot allocate space for the log file name\n");
+        if (displayfd != -1) {
+            /* Display isn't set yet, so we can't use it in filenames yet. */
+            char pidstring[32];
+            snprintf(pidstring, sizeof(pidstring), "pid-%ld",
+                     (unsigned long) getpid());
+            logFileName = LogFilePrep(fname, backup, pidstring);
+            saved_log_tempname = logFileName;
 
-        if (backup && *backup) {
-            struct stat buf;
-
-            if (!stat(logFileName, &buf) && S_ISREG(buf.st_mode)) {
-                char *suffix;
-                char *oldLog;
-
-#if __GNUC__ > 4 || __GNUC__ == 4 && __GNUC_MINOR__ > 5
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-                if ((asprintf(&suffix, backup, display) == -1) ||
-                    (asprintf(&oldLog, "%s%s", logFileName, suffix) == -1))
-                    FatalError("Cannot allocate space for the log file name\n");
-                free(suffix);
-                if (rename(logFileName, oldLog) == -1) {
-                    FatalError("Cannot move old log file \"%s\" to \"%s\"\n",
-                               logFileName, oldLog);
-                }
-                free(oldLog);
-            }
-        }
-        else {
-            unlink(logFileName);
-        }
+            /* Save the patterns for use when the display is named. */
+            saved_log_fname = strdup(fname);
+            if (backup == NULL)
+                saved_log_backup = NULL;
+            else
+                saved_log_backup = strdup(backup);
+        } else
+            logFileName = LogFilePrep(fname, backup, display);
         if ((logFile = fopen(logFileName, "w")) == NULL)
             FatalError("Cannot open log file \"%s\"\n", logFileName);
         setvbuf(logFile, NULL, _IONBF, 0);
@@ -256,11 +289,44 @@ LogInit(const char *fname, const char *backup)
 }
 
 void
+LogSetDisplay(void)
+{
+    if (saved_log_fname && strstr(saved_log_fname, "%s")) {
+        char *logFileName;
+
+        logFileName = LogFilePrep(saved_log_fname, saved_log_backup, display);
+
+        if (rename(saved_log_tempname, logFileName) == 0) {
+            LogMessageVerb(X_PROBED, 0,
+                           "Log file renamed from \"%s\" to \"%s\"\n",
+                           saved_log_tempname, logFileName);
+
+            if (strlen(saved_log_tempname) >= strlen(logFileName))
+                strncpy(saved_log_tempname, logFileName,
+                        strlen(saved_log_tempname));
+        }
+        else {
+            ErrorF("Failed to rename log file \"%s\" to \"%s\": %s\n",
+                   saved_log_tempname, logFileName, strerror(errno));
+        }
+
+        /* free newly allocated string - can't free old one since existing
+           pointers to it may exist in DDX callers. */
+        free(logFileName);
+        free(saved_log_fname);
+        free(saved_log_backup);
+    }
+}
+
+void
 LogClose(enum ExitCode error)
 {
     if (logFile) {
-        ErrorFSigSafe("Server terminated %s (%d). Closing log file.\n",
-               (error == EXIT_NO_ERROR) ? "successfully" : "with error", error);
+        int msgtype = (error == EXIT_NO_ERROR) ? X_INFO : X_ERROR;
+        LogMessageVerbSigSafe(msgtype, -1,
+                "Server terminated %s (%d). Closing log file.\n",
+                (error == EXIT_NO_ERROR) ? "successfully" : "with error",
+                error);
         fclose(logFile);
         logFile = NULL;
         logFileFd = -1;
@@ -354,6 +420,7 @@ vpnprintf(char *string, int size_in, const char *f, va_list args)
     uint64_t ui;
     int64_t si;
     size_t size = size_in;
+    int precision;
 
     for (; f_idx < f_len && s_idx < size - 1; f_idx++) {
         int length_modifier = 0;
@@ -364,9 +431,29 @@ vpnprintf(char *string, int size_in, const char *f, va_list args)
 
         f_idx++;
 
-        /* silently swallow digit length modifiers */
-        while (f_idx < f_len && ((f[f_idx] >= '0' && f[f_idx] <= '9') || f[f_idx] == '.'))
+        /* silently swallow minimum field width */
+        if (f[f_idx] == '*') {
             f_idx++;
+            va_arg(args, int);
+        } else {
+            while (f_idx < f_len && ((f[f_idx] >= '0' && f[f_idx] <= '9')))
+                f_idx++;
+        }
+
+        /* is there a precision? */
+        precision = size;
+        if (f[f_idx] == '.') {
+            f_idx++;
+            if (f[f_idx] == '*') {
+                f_idx++;
+                /* precision is supplied in an int argument */
+                precision = va_arg(args, int);
+            } else {
+                /* silently swallow precision digits */
+                while (f_idx < f_len && ((f[f_idx] >= '0' && f[f_idx] <= '9')))
+                    f_idx++;
+            }
+        }
 
         /* non-digit length modifiers */
         if (f_idx < f_len) {
@@ -382,9 +469,8 @@ vpnprintf(char *string, int size_in, const char *f, va_list args)
         switch (f[f_idx]) {
         case 's':
             string_arg = va_arg(args, char*);
-            p_len = strlen_sigsafe(string_arg);
 
-            for (i = 0; i < p_len && s_idx < size - 1; i++)
+            for (i = 0; string_arg[i] != 0 && s_idx < size - 1 && s_idx < precision; i++)
                 string[s_idx++] = string_arg[i];
             break;
 

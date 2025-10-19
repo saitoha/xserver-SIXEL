@@ -26,6 +26,7 @@ AM_CPPFLAGS = 			\
 	@KDRIVE_CFLAGS@		\
 	@XEPHYR_INCS@		\
 	@XEPHYR_CFLAGS@		\
+	-DHAVE_DIX_CONFIG_H	\
 	-I$(top_srcdir)		\
 	-I$(top_srcdir)/glamor	\
 	-I$(top_srcdir)/exa
@@ -46,19 +47,6 @@ GLAMOR_SRCS = \
 	$()
 endif
 
-if DRI
-DRI_SRCS =			\
-	ephyrdriext.c		\
-	ephyrdriext.h		\
-	ephyrdri.c		\
-	ephyrdri.h		\
-	ephyrglxext.c		\
-	ephyrglxext.h		\
-	ephyrhostglx.c		\
-	ephyrhostglx.h		\
-	$()
-endif
-
 bin_PROGRAMS = Xephyr
 
 Xephyr_SOURCES = \
@@ -66,12 +54,11 @@ Xephyr_SOURCES = \
 	ephyr.h \
 	ephyrlog.h \
 	ephyr_draw.c \
-	os.c \
 	ephyrinit.c \
+	ephyrcursor.c \
 	hostx.c \
 	hostx.h \
 	$(XV_SRCS) \
-	$(DRI_SRCS) \
 	$(GLAMOR_SRCS) \
 	$()
 

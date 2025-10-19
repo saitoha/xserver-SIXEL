@@ -91,7 +91,7 @@ ProcXFixesCreateRegion(ClientPtr client)
     return Success;
 }
 
-int
+int _X_COLD
 SProcXFixesCreateRegion(ClientPtr client)
 {
     REQUEST(xXFixesCreateRegionReq);
@@ -135,7 +135,7 @@ ProcXFixesCreateRegionFromBitmap(ClientPtr client)
     return Success;
 }
 
-int
+int _X_COLD
 SProcXFixesCreateRegionFromBitmap(ClientPtr client)
 {
     REQUEST(xXFixesCreateRegionFromBitmapReq);
@@ -194,7 +194,7 @@ ProcXFixesCreateRegionFromWindow(ClientPtr client)
     return Success;
 }
 
-int
+int _X_COLD
 SProcXFixesCreateRegionFromWindow(ClientPtr client)
 {
     REQUEST(xXFixesCreateRegionFromWindowReq);
@@ -222,20 +222,13 @@ ProcXFixesCreateRegionFromGC(ClientPtr client)
     if (rc != Success)
         return rc;
 
-    switch (pGC->clientClipType) {
-    case CT_PIXMAP:
-        pRegion = BitmapToRegion(pGC->pScreen, (PixmapPtr) pGC->clientClip);
-        if (!pRegion)
-            return BadAlloc;
-        break;
-    case CT_REGION:
+    if (pGC->clientClip) {
         pClip = (RegionPtr) pGC->clientClip;
         pRegion = XFixesRegionCopy(pClip);
         if (!pRegion)
             return BadAlloc;
-        break;
-    default:
-        return BadImplementation;       /* assume sane server bits */
+    } else {
+        return BadMatch;
     }
 
     if (!AddResource(stuff->region, RegionResType, (void *) pRegion))
@@ -244,7 +237,7 @@ ProcXFixesCreateRegionFromGC(ClientPtr client)
     return Success;
 }
 
-int
+int _X_COLD
 SProcXFixesCreateRegionFromGC(ClientPtr client)
 {
     REQUEST(xXFixesCreateRegionFromGCReq);
@@ -272,20 +265,12 @@ ProcXFixesCreateRegionFromPicture(ClientPtr client)
     if (!pPicture->pDrawable)
         return RenderErrBase + BadPicture;
 
-    switch (pPicture->clientClipType) {
-    case CT_PIXMAP:
-        pRegion = BitmapToRegion(pPicture->pDrawable->pScreen,
-                                 (PixmapPtr) pPicture->clientClip);
-        if (!pRegion)
-            return BadAlloc;
-        break;
-    case CT_REGION:
+    if (pPicture->clientClip) {
         pRegion = XFixesRegionCopy((RegionPtr) pPicture->clientClip);
         if (!pRegion)
             return BadAlloc;
-        break;
-    default:
-        return BadImplementation;       /* assume sane server bits */
+    } else {
+        return BadMatch;
     }
 
     if (!AddResource(stuff->region, RegionResType, (void *) pRegion))
@@ -294,7 +279,7 @@ ProcXFixesCreateRegionFromPicture(ClientPtr client)
     return Success;
 }
 
-int
+int _X_COLD
 SProcXFixesCreateRegionFromPicture(ClientPtr client)
 {
     REQUEST(xXFixesCreateRegionFromPictureReq);
@@ -318,7 +303,7 @@ ProcXFixesDestroyRegion(ClientPtr client)
     return Success;
 }
 
-int
+int _X_COLD
 SProcXFixesDestroyRegion(ClientPtr client)
 {
     REQUEST(xXFixesDestroyRegionReq);
@@ -356,7 +341,7 @@ ProcXFixesSetRegion(ClientPtr client)
     return Success;
 }
 
-int
+int _X_COLD
 SProcXFixesSetRegion(ClientPtr client)
 {
     REQUEST(xXFixesSetRegionReq);
@@ -374,6 +359,7 @@ ProcXFixesCopyRegion(ClientPtr client)
     RegionPtr pSource, pDestination;
 
     REQUEST(xXFixesCopyRegionReq);
+    REQUEST_SIZE_MATCH(xXFixesCopyRegionReq);
 
     VERIFY_REGION(pSource, stuff->source, client, DixReadAccess);
     VERIFY_REGION(pDestination, stuff->destination, client, DixWriteAccess);
@@ -384,13 +370,13 @@ ProcXFixesCopyRegion(ClientPtr client)
     return Success;
 }
 
-int
+int _X_COLD
 SProcXFixesCopyRegion(ClientPtr client)
 {
     REQUEST(xXFixesCopyRegionReq);
 
     swaps(&stuff->length);
-    REQUEST_AT_LEAST_SIZE(xXFixesCopyRegionReq);
+    REQUEST_SIZE_MATCH(xXFixesCopyRegionReq);
     swapl(&stuff->source);
     swapl(&stuff->destination);
     return (*ProcXFixesVector[stuff->xfixesReqType]) (client);
@@ -426,7 +412,7 @@ ProcXFixesCombineRegion(ClientPtr client)
     return Success;
 }
 
-int
+int _X_COLD
 SProcXFixesCombineRegion(ClientPtr client)
 {
     REQUEST(xXFixesCombineRegionReq);
@@ -470,7 +456,7 @@ ProcXFixesInvertRegion(ClientPtr client)
     return Success;
 }
 
-int
+int _X_COLD
 SProcXFixesInvertRegion(ClientPtr client)
 {
     REQUEST(xXFixesInvertRegionReq);
@@ -500,7 +486,7 @@ ProcXFixesTranslateRegion(ClientPtr client)
     return Success;
 }
 
-int
+int _X_COLD
 SProcXFixesTranslateRegion(ClientPtr client)
 {
     REQUEST(xXFixesTranslateRegionReq);
@@ -529,7 +515,7 @@ ProcXFixesRegionExtents(ClientPtr client)
     return Success;
 }
 
-int
+int _X_COLD
 SProcXFixesRegionExtents(ClientPtr client)
 {
     REQUEST(xXFixesRegionExtentsReq);
@@ -594,7 +580,7 @@ ProcXFixesFetchRegion(ClientPtr client)
     return Success;
 }
 
-int
+int _X_COLD
 SProcXFixesFetchRegion(ClientPtr client)
 {
     REQUEST(xXFixesFetchRegionReq);
@@ -637,7 +623,7 @@ ProcXFixesSetGCClipRegion(ClientPtr client)
     return Success;
 }
 
-int
+int _X_COLD
 SProcXFixesSetGCClipRegion(ClientPtr client)
 {
     REQUEST(xXFixesSetGCClipRegionReq);
@@ -727,7 +713,7 @@ ProcXFixesSetWindowShapeRegion(ClientPtr client)
     return Success;
 }
 
-int
+int _X_COLD
 SProcXFixesSetWindowShapeRegion(ClientPtr client)
 {
     REQUEST(xXFixesSetWindowShapeRegionReq);
@@ -760,7 +746,7 @@ ProcXFixesSetPictureClipRegion(ClientPtr client)
                                 pRegion);
 }
 
-int
+int _X_COLD
 SProcXFixesSetPictureClipRegion(ClientPtr client)
 {
     REQUEST(xXFixesSetPictureClipRegionReq);
@@ -792,7 +778,7 @@ ProcXFixesExpandRegion(ClientPtr client)
     nBoxes = RegionNumRects(pSource);
     pSrc = RegionRects(pSource);
     if (nBoxes) {
-        pTmp = malloc(nBoxes * sizeof(BoxRec));
+        pTmp = xallocarray(nBoxes, sizeof(BoxRec));
         if (!pTmp)
             return BadAlloc;
         for (i = 0; i < nBoxes; i++) {
@@ -813,7 +799,7 @@ ProcXFixesExpandRegion(ClientPtr client)
     return Success;
 }
 
-int
+int _X_COLD
 SProcXFixesExpandRegion(ClientPtr client)
 {
     REQUEST(xXFixesExpandRegionReq);

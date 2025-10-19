@@ -35,13 +35,13 @@ Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
 
                         All Rights Reserved
 
-Permission to use, copy, modify, and distribute this software and its 
-documentation for any purpose and without fee is hereby granted, 
+Permission to use, copy, modify, and distribute this software and its
+documentation for any purpose and without fee is hereby granted,
 provided that the above copyright notice appear in all copies and that
-both that copyright notice and this permission notice appear in 
+both that copyright notice and this permission notice appear in
 supporting documentation, and that the name of Digital not be
 used in advertising or publicity pertaining to distribution of the
-software without specific, written prior permission.  
+software without specific, written prior permission.
 
 DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
 ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
@@ -102,13 +102,17 @@ SOFTWARE.
 #include <sys/ioctl.h>
 #include <ctype.h>
 
-#if defined(TCPCONN) || defined(STREAMSCONN)
+#ifndef NO_LOCAL_CLIENT_CRED
+#include <pwd.h>
+#endif
+
+#if defined(TCPCONN)
 #include <netinet/in.h>
 #endif                          /* TCPCONN || STREAMSCONN */
 
 #ifdef HAVE_GETPEERUCRED
 #include <ucred.h>
-#ifdef sun
+#ifdef __sun
 #include <zone.h>
 #endif
 #endif
@@ -158,7 +162,7 @@ SOFTWARE.
  * Test for Solaris commented out  --  TSI @ UQV  2003.06.13
  */
 #ifdef SIOCGLIFCONF
-/* #if defined(sun) */
+/* #if defined(__sun) */
 #define USE_SIOCGLIFCONF
 /* #endif */
 #endif
@@ -168,6 +172,10 @@ SOFTWARE.
 #endif
 
 #endif                          /* WIN32 */
+
+#if !defined(WIN32) || defined(__CYGWIN__)
+#include <libgen.h>
+#endif
 
 #define X_INCLUDE_NETDB_H
 #include <X11/Xos_r.h>
@@ -201,7 +209,7 @@ static Bool NewHost(int /*family */ ,
    /etc/X<display>.hosts, we've added a requested field to the HOST struct,
    and a LocalHostRequested variable.  These default to FALSE, but are set
    to TRUE in ResetHosts when reading in /etc/X<display>.hosts.  They are
-   checked in DisableLocalHost(), which is called to disable the default 
+   checked in DisableLocalHost(), which is called to disable the default
    local host entries when stronger authentication is turned on. */
 
 typedef struct _host {
@@ -225,6 +233,13 @@ static int LocalHostEnabled = FALSE;
 static int LocalHostRequested = FALSE;
 static int UsingXdmcp = FALSE;
 
+static enum {
+    LOCAL_ACCESS_SCOPE_HOST = 0,
+#ifndef NO_LOCAL_CLIENT_CRED
+    LOCAL_ACCESS_SCOPE_USER,
+#endif
+} LocalAccessScope;
+
 /* FamilyServerInterpreted implementation */
 static Bool siAddrMatch(int family, void *addr, int len, HOST * host,
                         ClientPtr client);
@@ -235,6 +250,21 @@ static void siTypesInitialize(void);
  * called when authorization is not enabled to add the
  * local host to the access list
  */
+
+void
+EnableLocalAccess(void)
+{
+    switch (LocalAccessScope) {
+        case LOCAL_ACCESS_SCOPE_HOST:
+            EnableLocalHost();
+            break;
+#ifndef NO_LOCAL_CLIENT_CRED
+        case LOCAL_ACCESS_SCOPE_USER:
+            EnableLocalUser();
+            break;
+#endif
+    }
+}
 
 void
 EnableLocalHost(void)
@@ -249,6 +279,21 @@ EnableLocalHost(void)
  * called when authorization is enabled to keep us secure
  */
 void
+DisableLocalAccess(void)
+{
+    switch (LocalAccessScope) {
+        case LOCAL_ACCESS_SCOPE_HOST:
+            DisableLocalHost();
+            break;
+#ifndef NO_LOCAL_CLIENT_CRED
+        case LOCAL_ACCESS_SCOPE_USER:
+            DisableLocalUser();
+            break;
+#endif
+    }
+}
+
+void
 DisableLocalHost(void)
 {
     HOST *self;
@@ -262,6 +307,74 @@ DisableLocalHost(void)
     }
 }
 
+#ifndef NO_LOCAL_CLIENT_CRED
+static int GetLocalUserAddr(char **addr)
+{
+    static const char *type = "localuser";
+    static const char delimiter = '\0';
+    static const char *value;
+    struct passwd *pw;
+    int length = -1;
+
+    pw = getpwuid(getuid());
+
+    if (pw == NULL || pw->pw_name == NULL)
+        goto out;
+
+    value = pw->pw_name;
+
+    length = asprintf(addr, "%s%c%s", type, delimiter, value);
+
+    if (length == -1) {
+        goto out;
+    }
+
+    /* Trailing NUL */
+    length++;
+
+out:
+    return length;
+}
+
+void
+EnableLocalUser(void)
+{
+    char *addr = NULL;
+    int length = -1;
+
+    length = GetLocalUserAddr(&addr);
+
+    if (length == -1)
+        return;
+
+    NewHost(FamilyServerInterpreted, addr, length, TRUE);
+
+    free(addr);
+}
+
+void
+DisableLocalUser(void)
+{
+    char *addr = NULL;
+    int length = -1;
+
+    length = GetLocalUserAddr(&addr);
+
+    if (length == -1)
+        return;
+
+    RemoveHost(NULL, FamilyServerInterpreted, length, addr);
+
+    free(addr);
+}
+
+void
+LocalAccessScopeUser(void)
+{
+    LocalAccessScope = LOCAL_ACCESS_SCOPE_USER;
+}
+#endif
+
 /*
  * called at init time when XDMCP will be used; xdmcp always
  * adds local hosts manually when needed
@@ -274,7 +387,7 @@ AccessUsingXdmcp(void)
     LocalHostEnabled = FALSE;
 }
 
-#if  defined(SVR4) && !defined(sun)  && defined(SIOCGIFCONF) && !defined(USE_SIOCGLIFCONF)
+#if  defined(SVR4) && !defined(__sun)  && defined(SIOCGIFCONF) && !defined(USE_SIOCGLIFCONF)
 
 /* Deal with different SIOCGIFCONF ioctl semantics on these OSs */
 
@@ -309,7 +422,7 @@ ifioctl(int fd, int cmd, char *arg)
 /*
  * DefineSelf (fd):
  *
- * Define this host for access control.  Find all the hosts the OS knows about 
+ * Define this host for access control.  Find all the hosts the OS knows about
  * for this fd and add them to the selfhosts list.
  */
 
@@ -317,7 +430,7 @@ ifioctl(int fd, int cmd, char *arg)
 void
 DefineSelf(int fd)
 {
-#if !defined(TCPCONN) && !defined(STREAMSCONN) && !defined(UNIXCONN)
+#if !defined(TCPCONN) && !defined(UNIXCONN)
     return;
 #else
     register int n;
@@ -712,7 +825,7 @@ DefineSelf(int fd)
                 )
                 continue;
 
-            /* 
+            /*
              * ignore 'localhost' entries as they're not useful
              * on the other end of the wire
              */
@@ -825,17 +938,16 @@ ResetHosts(const char *display)
     char *ptr;
     int i, hostlen;
 
-#if (defined(TCPCONN) || defined(STREAMSCONN) ) && \
-     (!defined(IPv6) || !defined(AF_INET6))
+#if defined(TCPCONN) &&  (!defined(IPv6) || !defined(AF_INET6))
     union {
         struct sockaddr sa;
-#if defined(TCPCONN) || defined(STREAMSCONN)
+#if defined(TCPCONN)
         struct sockaddr_in in;
 #endif                          /* TCPCONN || STREAMSCONN */
     } saddr;
 #endif
     int family = 0;
-    void *addr;
+    void *addr = NULL;
     int len;
 
     siTypesInitialize();
@@ -875,7 +987,7 @@ ResetHosts(const char *display)
                 NewHost(family, "", 0, FALSE);
                 LocalHostRequested = TRUE;      /* Fix for XFree86 bug #156 */
             }
-#if defined(TCPCONN) || defined(STREAMSCONN)
+#if defined(TCPCONN)
             else if (!strncmp("inet:", lhostname, 5)) {
                 family = FamilyInternet;
                 hostname = ohostname + 5;
@@ -914,7 +1026,7 @@ ResetHosts(const char *display)
             }
             else
 #endif                          /* SECURE_RPC */
-#if defined(TCPCONN) || defined(STREAMSCONN)
+#if defined(TCPCONN)
             {
 #if defined(IPv6) && defined(AF_INET6)
                 if ((family == FamilyInternet) || (family == FamilyInternet6) ||
@@ -928,8 +1040,8 @@ ResetHosts(const char *display)
                             len = a->ai_addrlen;
                             f = ConvertAddr(a->ai_addr, &len,
                                             (void **) &addr);
-                            if ((family == f) ||
-                                ((family == FamilyWild) && (f != -1))) {
+                            if (addr && ((family == f) ||
+                                         ((family == FamilyWild) && (f != -1)))) {
                                 NewHost(f, addr, len, FALSE);
                             }
                         }
@@ -972,9 +1084,8 @@ ResetHosts(const char *display)
     }
 }
 
-/* Is client on the local host */
-Bool
-ComputeLocalClient(ClientPtr client)
+static Bool
+xtransLocalClient(ClientPtr client)
 {
     int alen, family, notused;
     Xtransaddr *from = NULL;
@@ -1007,10 +1118,45 @@ ComputeLocalClient(ClientPtr client)
     return FALSE;
 }
 
+/* Is client on the local host */
+Bool
+ComputeLocalClient(ClientPtr client)
+{
+    const char *cmdname = GetClientCmdName(client);
+
+    if (!xtransLocalClient(client))
+        return FALSE;
+
+    /* If the executable name is "ssh", assume that this client connection
+     * is forwarded from another host via SSH
+     */
+    if (cmdname) {
+        char *cmd = strdup(cmdname);
+        Bool ret;
+
+        /* Cut off any colon and whatever comes after it, see
+         * https://lists.freedesktop.org/archives/xorg-devel/2015-December/048164.html
+         */
+        char *tok = strtok(cmd, ":");
+
+#if !defined(WIN32) || defined(__CYGWIN__)
+        ret = strcmp(basename(tok), "ssh") != 0;
+#else
+        ret = strcmp(tok, "ssh") != 0;
+#endif
+
+        free(cmd);
+
+        return ret;
+    }
+
+    return TRUE;
+}
+
 /*
  * Return the uid and all gids of a connected local client
  * Allocates a LocalClientCredRec - caller must call FreeLocalClientCreds
- * 
+ *
  * Used by localuser & localgroup ServerInterpreted access control forms below
  * Used by AuthAudit to log who local connections came from
  */
@@ -1036,9 +1182,9 @@ GetLocalClientCreds(ClientPtr client, LocalClientCredRec ** lccp)
     if (client == NULL)
         return -1;
     ci = ((OsCommPtr) client->osPrivate)->trans_conn;
-#if !(defined(sun) && defined(HAVE_GETPEERUCRED))
-    /* Most implementations can only determine peer credentials for Unix 
-     * domain sockets - Solaris getpeerucred can work with a bit more, so 
+#if !(defined(__sun) && defined(HAVE_GETPEERUCRED))
+    /* Most implementations can only determine peer credentials for Unix
+     * domain sockets - Solaris getpeerucred can work with a bit more, so
      * we just let it tell us if the connection type is supported or not
      */
     if (!_XSERVTransIsLocal(ci)) {
@@ -1112,7 +1258,6 @@ GetLocalClientCreds(ClientPtr client, LocalClientCredRec ** lccp)
 #endif
 #else
     /* No system call available to get the credentials of the peer */
-#define NO_LOCAL_CLIENT_CRED
     return -1;
 #endif
 }
@@ -1203,7 +1348,7 @@ ForEachHostInFamily(int family, Bool (*func) (unsigned char *addr,
     return FALSE;
 }
 
-/* Add a host to the access control list. This is the internal interface 
+/* Add a host to the access control list. This is the internal interface
  * called when starting or resetting the server */
 static Bool
 NewHost(int family, const void *addr, int len, int addingLocalHosts)
@@ -1296,6 +1441,10 @@ GetHosts(void **data, int *pnHosts, int *pLen, BOOL * pEnabled)
     for (host = validhosts; host; host = host->next) {
         nHosts++;
         n += pad_to_int32(host->len) + sizeof(xHostEntry);
+        /* Could check for INT_MAX, but in reality having more than 1mb of
+           hostnames in the access list is ridiculous */
+        if (n >= 1048576)
+            break;
     }
     if (n) {
         *data = ptr = malloc(n);
@@ -1304,6 +1453,8 @@ GetHosts(void **data, int *pnHosts, int *pLen, BOOL * pEnabled)
         }
         for (host = validhosts; host; host = host->next) {
             len = host->len;
+            if ((ptr + sizeof(xHostEntry) + len) > ((unsigned char *) *data + n))
+                break;
             ((xHostEntry *) ptr)->family = host->family;
             ((xHostEntry *) ptr)->length = len;
             ptr += sizeof(xHostEntry);
@@ -1327,7 +1478,7 @@ CheckAddr(int family, const void *pAddr, unsigned length)
     int len;
 
     switch (family) {
-#if defined(TCPCONN) || defined(STREAMSCONN)
+#if defined(TCPCONN)
     case FamilyInternet:
         if (length == sizeof(struct in_addr))
             len = length;
@@ -1352,14 +1503,14 @@ CheckAddr(int family, const void *pAddr, unsigned length)
     return len;
 }
 
-/* Check if a host is not in the access control list. 
+/* Check if a host is not in the access control list.
  * Returns 1 if host is invalid, 0 if we've found it. */
 
 int
 InvalidHost(register struct sockaddr *saddr, int len, ClientPtr client)
 {
     int family;
-    void *addr;
+    void *addr = NULL;
     register HOST *selfhost, *host;
 
     if (!AccessEnabled)         /* just let them in */
@@ -1370,7 +1521,7 @@ InvalidHost(register struct sockaddr *saddr, int len, ClientPtr client)
     if (family == FamilyLocal) {
         if (!LocalHostEnabled) {
             /*
-             * check to see if any local address is enabled.  This 
+             * check to see if any local address is enabled.  This
              * implicitly enables local connections.
              */
             for (selfhost = selfhosts; selfhost; selfhost = selfhost->next) {
@@ -1391,7 +1542,7 @@ InvalidHost(register struct sockaddr *saddr, int len, ClientPtr client)
             }
         }
         else {
-            if (addrEqual(family, addr, len, host))
+            if (addr && addrEqual(family, addr, len, host))
                 return 0;
         }
 
@@ -1410,7 +1561,7 @@ ConvertAddr(register struct sockaddr *saddr, int *len, void **addr)
     case AF_UNIX:
 #endif
         return FamilyLocal;
-#if defined(TCPCONN) || defined(STREAMSCONN)
+#if defined(TCPCONN)
     case AF_INET:
 #ifdef WIN32
         if (16777343 == *(long *) &((struct sockaddr_in *) saddr)->sin_addr)
@@ -1460,6 +1611,20 @@ GetAccessControl(void)
     return AccessEnabled;
 }
 
+int
+GetClientFd(ClientPtr client)
+{
+    return ((OsCommPtr) client->osPrivate)->fd;
+}
+
+Bool
+ClientIsLocal(ClientPtr client)
+{
+    XtransConnInfo ci = ((OsCommPtr) client->osPrivate)->trans_conn;
+
+    return _XSERVTransIsLocal(ci);
+}
+
 /*****************************************************************************
  * FamilyServerInterpreted host entry implementation
  *
@@ -1474,7 +1639,7 @@ GetAccessControl(void)
  * See xc/doc/specs/SIAddresses for formal definitions of each type.
  */
 
-/* These definitions and the siTypeAdd function could be exported in the 
+/* These definitions and the siTypeAdd function could be exported in the
  * future to enable loading additional host types, but that was not done for
  * the initial implementation.
  */
@@ -1571,7 +1736,7 @@ siCheckAddr(const char *addrString, int length)
     valueString = (const char *) memchr(addrString, '\0', length);
     if (valueString != NULL) {
         /* Make sure the first string is a recognized address type,
-         * and the second string is a valid address of that type. 
+         * and the second string is a valid address of that type.
          */
         typelen = strlen(addrString) + 1;
         addrlen = length - typelen;
@@ -1638,8 +1803,8 @@ siHostnameAddrMatch(int family, void *addr, int len,
 {
     Bool res = FALSE;
 
-/* Currently only supports checking against IPv4 & IPv6 connections, but 
- * support for other address families, such as DECnet, could be added if 
+/* Currently only supports checking against IPv4 & IPv6 connections, but
+ * support for other address families, such as DECnet, could be added if
  * desired.
  */
 #if defined(IPv6) && defined(AF_INET6)
@@ -1648,7 +1813,7 @@ siHostnameAddrMatch(int family, void *addr, int len,
         struct addrinfo *addresses;
         struct addrinfo *a;
         int f, hostaddrlen;
-        void *hostaddr;
+        void *hostaddr = NULL;
 
         if (siAddrLen >= sizeof(hostname))
             return FALSE;
@@ -1659,7 +1824,7 @@ siHostnameAddrMatch(int family, void *addr, int len,
             for (a = addresses; a != NULL; a = a->ai_next) {
                 hostaddrlen = a->ai_addrlen;
                 f = ConvertAddr(a->ai_addr, &hostaddrlen, &hostaddr);
-                if ((f == family) && (len == hostaddrlen) &&
+                if ((f == family) && (len == hostaddrlen) && hostaddr &&
                     (memcmp(addr, hostaddr, len) == 0)) {
                     res = TRUE;
                     break;
@@ -1717,7 +1882,7 @@ siHostnameCheckAddr(const char *valueString, int length, void *typePriv)
 {
     /* Check conformance of hostname to RFC 2396 sec. 3.2.2 definition.
      * We do not use ctype functions here to avoid locale-specific
-     * character sets.  Hostnames must be pure ASCII.  
+     * character sets.  Hostnames must be pure ASCII.
      */
     int len = length;
     int i;
@@ -1771,12 +1936,12 @@ siHostnameCheckAddr(const char *valueString, int length, void *typePriv)
  *
  * Currently supports only IPv6 literal address as specified in IETF RFC 3513
  *
- * Once draft-ietf-ipv6-scoping-arch-00.txt becomes an RFC, support will be 
+ * Once draft-ietf-ipv6-scoping-arch-00.txt becomes an RFC, support will be
  * added for the scoped address format it specifies.
  */
 
-/* Maximum length of an IPv6 address string - increase when adding support 
- * for scoped address qualifiers.  Includes room for trailing NUL byte. 
+/* Maximum length of an IPv6 address string - increase when adding support
+ * for scoped address qualifiers.  Includes room for trailing NUL byte.
  */
 #define SI_IPv6_MAXLEN INET6_ADDRSTRLEN
 

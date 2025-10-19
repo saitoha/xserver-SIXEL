@@ -16,7 +16,7 @@
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL SuSE
  * BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
  * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
- * OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN 
+ * OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
  * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
  * Author:  Keith Packard, SuSE, Inc.
@@ -78,7 +78,7 @@ static GlyphHashSetRec glyphHashSets[] = {
     {536870912, 590559793, 590559791}
 };
 
-#define NGLYPHHASHSETS	(sizeof(glyphHashSets)/sizeof(glyphHashSets[0]))
+#define NGLYPHHASHSETS	ARRAY_SIZE(glyphHashSets)
 
 static GlyphHashRec globalGlyphs[GlyphFormatNum];
 
@@ -106,7 +106,7 @@ GlyphUninit(ScreenPtr pScreen)
     }
 }
 
-GlyphHashSetPtr
+static GlyphHashSetPtr
 FindGlyphHashSet(CARD32 filled)
 {
     int i;
@@ -117,7 +117,7 @@ FindGlyphHashSet(CARD32 filled)
     return 0;
 }
 
-GlyphRefPtr
+static GlyphRefPtr
 FindGlyphRef(GlyphHashPtr hash,
              CARD32 signature, Bool match, unsigned char sha1[20])
 {
@@ -245,7 +245,7 @@ FreeGlyphPicture(GlyphPtr glyph)
     }
 }
 
-void
+static void
 FreeGlyph(GlyphPtr glyph, int format)
 {
     CheckDuplicates(&globalGlyphs[format], "FreeGlyph");
@@ -383,7 +383,7 @@ AllocateGlyph(xGlyphInfo * gi, int fdepth)
     return 0;
 }
 
-Bool
+static Bool
 AllocateGlyphHash(GlyphHashPtr hash, GlyphHashSetPtr hashSet)
 {
     hash->table = calloc(hashSet->size, sizeof(GlyphRefRec));
@@ -394,7 +394,7 @@ AllocateGlyphHash(GlyphHashPtr hash, GlyphHashSetPtr hashSet)
     return TRUE;
 }
 
-Bool
+static Bool
 ResizeGlyphHash(GlyphHashPtr hash, CARD32 change, Bool global)
 {
     CARD32 tableEntries;

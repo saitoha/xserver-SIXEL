@@ -45,6 +45,8 @@
 /* #include "g_disptab_EXT.h" */
 #include "unpack.h"
 #include "glxutil.h"
+#include "glxcmds.h"
+#include "glxsingle.h"
 
 #include "GL/glxproto.h"
 
@@ -80,10 +82,6 @@
 #endif
 
 #define X_GLXSingle 0           /* needed by GetReqExtra */
-
-extern Display *GetBackEndDisplay(__GLXclientState * cl, int s);
-extern int GetCurrentBackEndTag(__GLXclientState * cl, GLXContextTag tag,
-                                int s);
 
 static int swap_vec_element_size = 0;
 
@@ -233,7 +231,7 @@ __glXForwardPipe0WithReply(__GLXclientState * cl, GLbyte * pc)
     dmxScreen = &dmxScreens[glxc->pScreen->myNum];
     dpy = GetBackEndDisplay(cl, glxc->pScreen->myNum);
 
-    /* 
+    /*
      * send the request to the first back-end server
      */
     LockDisplay(dpy);
@@ -329,7 +327,7 @@ __glXForwardAllWithReply(__GLXclientState * cl, GLbyte * pc)
     pc += sz_xGLXSingleReq;
     buf_size = (req->length << 2) - sz_xGLXSingleReq;
 
-    /* 
+    /*
      * send the request to the first back-end server(s)
      */
     for (s = to_screen; s >= from_screen; s--) {
@@ -806,9 +804,8 @@ __glXDisp_ReadPixels(__GLXclientState * cl, GLbyte * pc)
     int win_y1, win_y2;
     int ebits, rowsize;
 
-    __GLX_DECLARE_SWAP_VARIABLES;
-
     if (client->swapped) {
+        __GLX_DECLARE_SWAP_VARIABLES;
         __GLX_SWAP_INT(&req->contextTag);
     }
 
@@ -836,6 +833,7 @@ __glXDisp_ReadPixels(__GLXclientState * cl, GLbyte * pc)
     lsbFirst = *(GLboolean *) (pc + 25);
 
     if (client->swapped) {
+        __GLX_DECLARE_SWAP_VARIABLES;
         __GLX_SWAP_INT(&x);
         __GLX_SWAP_INT(&y);
         __GLX_SWAP_INT(&width);
@@ -1019,6 +1017,7 @@ __glXDisp_ReadPixels(__GLXclientState * cl, GLbyte * pc)
     };
 
     if (client->swapped) {
+        __GLX_DECLARE_SWAP_VARIABLES;
         __GLX_SWAP_SHORT(&reply.sequenceNumber);
         __GLX_SWAP_INT(&reply.length);
     }

@@ -155,7 +155,7 @@ xf86XvMCScreenInit(ScreenPtr pScreen,
     if (noXvExtension)
         return FALSE;
 
-    if (!(pAdapt = malloc(sizeof(XvMCAdaptorRec) * num_adaptors)))
+    if (!(pAdapt = xallocarray(num_adaptors, sizeof(XvMCAdaptorRec))))
         return FALSE;
 
     if (!dixRegisterPrivateKey(&XF86XvMCScreenKeyRec, PRIVATE_SCREEN, 0)) {
@@ -187,6 +187,7 @@ xf86XvMCScreenInit(ScreenPtr pScreen,
         }
         if (!pAdapt[i].xv_adaptor) {
             /* no adaptor by that name */
+            pScreenPriv->dixinfo = FALSE;
             free(pAdapt);
             return FALSE;
         }

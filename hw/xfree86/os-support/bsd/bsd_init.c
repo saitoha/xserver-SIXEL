@@ -6,19 +6,19 @@
  * documentation for any purpose is hereby granted without fee, provided that
  * the above copyright notice appear in all copies and that both that
  * copyright notice and this permission notice appear in supporting
- * documentation, and that the names of Rich Murphey and David Wexelblat 
- * not be used in advertising or publicity pertaining to distribution of 
+ * documentation, and that the names of Rich Murphey and David Wexelblat
+ * not be used in advertising or publicity pertaining to distribution of
  * the software without specific, written prior permission.  Rich Murphey and
- * David Wexelblat make no representations about the suitability of this 
- * software for any purpose.  It is provided "as is" without express or 
+ * David Wexelblat make no representations about the suitability of this
+ * software for any purpose.  It is provided "as is" without express or
  * implied warranty.
  *
- * RICH MURPHEY AND DAVID WEXELBLAT DISCLAIM ALL WARRANTIES WITH REGARD TO 
- * THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND 
- * FITNESS, IN NO EVENT SHALL RICH MURPHEY OR DAVID WEXELBLAT BE LIABLE FOR 
- * ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER 
- * RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF 
- * CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN 
+ * RICH MURPHEY AND DAVID WEXELBLAT DISCLAIM ALL WARRANTIES WITH REGARD TO
+ * THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS, IN NO EVENT SHALL RICH MURPHEY OR DAVID WEXELBLAT BE LIABLE FOR
+ * ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER
+ * RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF
+ * CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
  * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
  */
@@ -173,7 +173,7 @@ xf86OpenConsole()
         if (!KeepTty) {
             /*
              * detaching the controlling tty solves problems of kbd character
-             * loss.  This is not interesting for CO driver, because it is 
+             * loss.  This is not interesting for CO driver, because it is
              * exclusive.
              */
             setpgrp(0, getpid());
@@ -192,7 +192,7 @@ xf86OpenConsole()
         /* Check that a supported console driver was found */
         if (fd < 0) {
             char cons_drivers[80] = { 0, };
-            for (i = 0; i < sizeof(supported_drivers) / sizeof(char *); i++) {
+            for (i = 0; i < ARRAY_SIZE(supported_drivers); i++) {
                 if (i) {
                     strcat(cons_drivers, ", ");
                 }
@@ -269,7 +269,7 @@ xf86OpenConsole()
                             "xf86OpenConsole: VT_WAITACTIVE failed\n");
                 }
 
-                signal(SIGUSR1, xf86VTRequest);
+                OsSignal(SIGUSR1, xf86VTRequest);
 
                 vtmode.mode = VT_PROCESS;
                 vtmode.relsig = SIGUSR1;
@@ -631,7 +631,7 @@ int
 xf86ProcessArgument(int argc, char *argv[], int i)
 {
     /*
-     * Keep server from detaching from controlling tty.  This is useful 
+     * Keep server from detaching from controlling tty.  This is useful
      * when debugging (so the server can receive keyboard signals.
      */
     if (!strcmp(argv[i], "-keeptty")) {
@@ -659,5 +659,11 @@ xf86UseMsg()
 #endif                          /* SYSCONS_SUPPORT || PCVT_SUPPORT */
     ErrorF("-keeptty               ");
     ErrorF("don't detach controlling tty (for debugging only)\n");
+    return;
+}
+
+void
+xf86OSInputThreadInit(void)
+{
     return;
 }

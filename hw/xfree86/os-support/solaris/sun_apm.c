@@ -113,14 +113,12 @@ static struct {
 #endif
 };
 
-#define numApmEvents (sizeof(sunToXF86Array) / sizeof(sunToXF86Array[0]))
-
 static pmEvent
 sunToXF86(int type)
 {
     int i;
 
-    for (i = 0; i < numApmEvents; i++) {
+    for (i = 0; i < ARRAY_SIZE(sunToXF86Array); i++) {
         if (type == sunToXF86Array[i].apmBsd) {
             return sunToXF86Array[i].xf86;
         }
@@ -129,7 +127,7 @@ sunToXF86(int type)
 }
 
 /*
- * APM events can be requested direclty from /dev/apm 
+ * APM events can be requested direclty from /dev/apm
  */
 static int
 sunPMGetEventFromOS(int fd, pmEvent * events, int num)

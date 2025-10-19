@@ -63,11 +63,10 @@ typedef struct {
     XID authId;
 } SecurityStateRec;
 
-/* Extensions that untrusted clients shouldn't have access to */
+/* The only extensions that untrusted clients have access to */
 static const char *SecurityTrustedExtensions[] = {
     "XC-MISC",
     "BIG-REQUESTS",
-    "XpExtension",
     NULL
 };
 
@@ -213,7 +212,7 @@ SecurityDeleteAuthorization(void *value, XID id)
                 CloseDownClient(clients[i]);
         }
 
-    SecurityAudit("revoked authorization ID %d\n", pAuth->id);
+    SecurityAudit("revoked authorization ID %lu\n", (unsigned long)pAuth->id);
     free(pAuth);
     return Success;
 
@@ -550,9 +549,9 @@ ProcSecurityGenerateAuthorization(ClientPtr client)
     WriteToClient(client, authdata_len, pAuthdata);
 
     SecurityAudit
-        ("client %d generated authorization %d trust %d timeout %d group %d events %d\n",
-         client->index, pAuth->id, pAuth->trustLevel, pAuth->timeout,
-         pAuth->group, eventMask);
+        ("client %d generated authorization %lu trust %d timeout %lu group %lu events %lu\n",
+         client->index, (unsigned long)pAuth->id, pAuth->trustLevel, (unsigned long)pAuth->timeout,
+         (unsigned long)pAuth->group, (unsigned long)eventMask);
 
     /* the request succeeded; don't call RemoveAuthorization or free pAuth */
     return Success;
@@ -602,7 +601,7 @@ ProcSecurityDispatch(ClientPtr client)
     }
 }                               /* ProcSecurityDispatch */
 
-static int
+static int _X_COLD
 SProcSecurityQueryVersion(ClientPtr client)
 {
     REQUEST(xSecurityQueryVersionReq);
@@ -614,7 +613,7 @@ SProcSecurityQueryVersion(ClientPtr client)
     return ProcSecurityQueryVersion(client);
 }                               /* SProcSecurityQueryVersion */
 
-static int
+static int _X_COLD
 SProcSecurityGenerateAuthorization(ClientPtr client)
 {
     REQUEST(xSecurityGenerateAuthorizationReq);
@@ -638,7 +637,7 @@ SProcSecurityGenerateAuthorization(ClientPtr client)
     return ProcSecurityGenerateAuthorization(client);
 }                               /* SProcSecurityGenerateAuthorization */
 
-static int
+static int _X_COLD
 SProcSecurityRevokeAuthorization(ClientPtr client)
 {
     REQUEST(xSecurityRevokeAuthorizationReq);
@@ -649,7 +648,7 @@ SProcSecurityRevokeAuthorization(ClientPtr client)
     return ProcSecurityRevokeAuthorization(client);
 }                               /* SProcSecurityRevokeAuthorization */
 
-static int
+static int _X_COLD
 SProcSecurityDispatch(ClientPtr client)
 {
     REQUEST(xReq);
@@ -666,7 +665,7 @@ SProcSecurityDispatch(ClientPtr client)
     }
 }                               /* SProcSecurityDispatch */
 
-static void
+static void _X_COLD
 SwapSecurityAuthorizationRevokedEvent(xSecurityAuthorizationRevokedEvent * from,
                                       xSecurityAuthorizationRevokedEvent * to)
 {
@@ -777,9 +776,9 @@ SecurityResource(CallbackListPtr *pcbl, void *unused, void *calldata)
             return;
     }
 
-    SecurityAudit("Security: denied client %d access %x to resource 0x%x "
+    SecurityAudit("Security: denied client %d access %lx to resource 0x%lx "
                   "of client %d on request %s\n", rec->client->index,
-                  requested, rec->id, cid,
+                  (unsigned long)requested, (unsigned long)rec->id, cid,
                   SecurityLookupRequestName(rec->client));
     rec->status = BadAccess;    /* deny access */
 }
@@ -859,9 +858,9 @@ SecurityProperty(CallbackListPtr *pcbl, void *unused, void *calldata)
 
     if (SecurityDoCheck(subj, obj, requested, allowed) != Success) {
         SecurityAudit("Security: denied client %d access to property %s "
-                      "(atom 0x%x) window 0x%x of client %d on request %s\n",
+                      "(atom 0x%x) window 0x%lx of client %d on request %s\n",
                       rec->client->index, NameForAtom(name), name,
-                      rec->pWin->drawable.id, wClient(rec->pWin)->index,
+                      (unsigned long)rec->pWin->drawable.id, wClient(rec->pWin)->index,
                       SecurityLookupRequestName(rec->client));
         rec->status = BadAccess;
     }
@@ -888,10 +887,10 @@ SecuritySend(CallbackListPtr *pcbl, void *unused, void *calldata)
                 rec->events[i].u.u.type != ClientMessage) {
 
                 SecurityAudit("Security: denied client %d from sending event "
-                              "of type %s to window 0x%x of client %d\n",
+                              "of type %s to window 0x%lx of client %d\n",
                               rec->client->index,
                               LookupEventName(rec->events[i].u.u.type),
-                              rec->pWin->drawable.id,
+                              (unsigned long)rec->pWin->drawable.id,
                               wClient(rec->pWin)->index);
                 rec->status = BadAccess;
                 return;
@@ -912,8 +911,8 @@ SecurityReceive(CallbackListPtr *pcbl, void *unused, void *calldata)
         return;
 
     SecurityAudit("Security: denied client %d from receiving an event "
-                  "sent to window 0x%x of client %d\n",
-                  rec->client->index, rec->pWin->drawable.id,
+                  "sent to window 0x%lx of client %d\n",
+                  rec->client->index, (unsigned long)rec->pWin->drawable.id,
                   wClient(rec->pWin)->index);
     rec->status = BadAccess;
 }
@@ -929,12 +928,12 @@ SecurityReceive(CallbackListPtr *pcbl, void *unused, void *calldata)
  * Returns: nothing.
  *
  * Side Effects:
- * 
+ *
  * If a new client is connecting, its authorization ID is copied to
  * client->authID.  If this is a generated authorization, its reference
  * count is bumped, its timer is cancelled if it was running, and its
  * trustlevel is copied to TRUSTLEVEL(client).
- * 
+ *
  * If a client is disconnecting and the client was using a generated
  * authorization, the authorization's reference count is decremented, and
  * if it is now zero, the timer for this authorization is started.

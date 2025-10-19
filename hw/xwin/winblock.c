@@ -36,12 +36,9 @@
 
 /* See Porting Layer Definition - p. 6 */
 void
-winBlockHandler(ScreenPtr pScreen,
-                void *pTimeout, void *pReadMask)
+winBlockHandler(ScreenPtr pScreen, void *pTimeout)
 {
-#if defined(XWIN_CLIPBOARD) || defined(XWIN_MULTIWINDOW)
     winScreenPriv(pScreen);
-#endif
 
 #ifndef HAS_DEVWINDOWS
     struct timeval **tvp = pTimeout;
@@ -65,12 +62,11 @@ winBlockHandler(ScreenPtr pScreen,
     }
 #endif
 
-#if defined(XWIN_CLIPBOARD) || defined(XWIN_MULTIWINDOW)
     /* Signal threaded modules to begin */
     if (pScreenPriv != NULL && !pScreenPriv->fServerStarted) {
         int iReturn;
 
-        ErrorF("winBlockHandler - pthread_mutex_unlock()\n");
+        winDebug("winBlockHandler - pthread_mutex_unlock()\n");
 
         /* Flag that modules are to be started */
         pScreenPriv->fServerStarted = TRUE;
@@ -85,7 +81,6 @@ winBlockHandler(ScreenPtr pScreen,
             winDebug("winBlockHandler - pthread_mutex_unlock () returned\n");
         }
     }
-#endif
 
   /*
     At least one X client has asked to suspend the screensaver, so

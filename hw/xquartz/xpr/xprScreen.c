@@ -33,7 +33,6 @@
 #include <dix-config.h>
 #endif
 
-#include "quartzCommon.h"
 #include "inputstr.h"
 #include "quartz.h"
 #include "quartzRandR.h"
@@ -54,10 +53,7 @@
 #include "damage.h"
 #endif
 
-#if MAC_OS_X_VERSION_MIN_REQUIRED < 1090
-// From NSApplication.h
-extern const double NSAppKitVersionNumber;
-#endif
+#include "nonsdk_extinit.h"
 
 /* 10.4's deferred update makes X slower.. have to live with the tearing
  * for now.. */
@@ -170,18 +166,13 @@ displayScreenBounds(CGDirectDisplayID id)
               (int)frame.origin.x, (int)frame.origin.y);
 
     Boolean spacePerDisplay = false;
-#if MAC_OS_X_VERSION_MIN_REQUIRED < 1090
-    if (NSAppKitVersionNumber >= 1265)
-#endif
-    {
-        Boolean ok;
-        (void)CFPreferencesAppSynchronize(CFSTR("com.apple.spaces"));
-        spacePerDisplay = ! CFPreferencesGetAppBooleanValue(CFSTR("spans-displays"),
-                                                            CFSTR("com.apple.spaces"),
-                                                            &ok);
-        if (!ok)
-            spacePerDisplay = true;
-    }
+    Boolean ok;
+    (void)CFPreferencesAppSynchronize(CFSTR("com.apple.spaces"));
+    spacePerDisplay = ! CFPreferencesGetAppBooleanValue(CFSTR("spans-displays"),
+                                                        CFSTR("com.apple.spaces"),
+                                                        &ok);
+    if (!ok)
+        spacePerDisplay = true;
 
     /* Remove menubar to help standard X11 window managers.
      * On Mavericks and later, the menu bar is on all displays when spans-displays is false or unset.
@@ -329,10 +320,6 @@ xprAddScreen(int index, ScreenPtr pScreen)
     DEBUG_LOG("index=%d depth=%d\n", index, depth);
 
     if (depth == -1) {
-#if MAC_OS_X_VERSION_MIN_REQUIRED < 1060
-        depth = CGDisplaySamplesPerPixel(kCGDirectMainDisplay) *
-                CGDisplayBitsPerSample(kCGDirectMainDisplay);
-#else
         CGDisplayModeRef modeRef;
         CFStringRef encStrRef;
 
@@ -362,12 +349,9 @@ xprAddScreen(int index, ScreenPtr pScreen)
         }
 
         CFRelease(encStrRef);
-#endif
     }
 
-#if MAC_OS_X_VERSION_MIN_REQUIRED >= 1060
 have_depth:
-#endif
     switch (depth) {
     case 8:     // pseudo-working
         dfb->visuals = PseudoColorMask;
@@ -468,7 +452,7 @@ xprSetupScreen(int index, ScreenPtr pScreen)
 
 /*
  * xprUpdateScreen
- *  Update screen after configuation change.
+ *  Update screen after configuration change.
  */
 static void
 xprUpdateScreen(ScreenPtr pScreen)

@@ -26,13 +26,13 @@ Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
 
                         All Rights Reserved
 
-Permission to use, copy, modify, and distribute this software and its 
-documentation for any purpose and without fee is hereby granted, 
+Permission to use, copy, modify, and distribute this software and its
+documentation for any purpose and without fee is hereby granted,
 provided that the above copyright notice appear in all copies and that
-both that copyright notice and this permission notice appear in 
+both that copyright notice and this permission notice appear in
 supporting documentation, and that the name of Digital not be
 used in advertising or publicity pertaining to distribution of the
-software without specific, written prior permission.  
+software without specific, written prior permission.
 
 DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
 ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
@@ -105,16 +105,27 @@ dixLookupProperty(PropertyPtr *result, WindowPtr pWin, Atom propertyName,
     return rc;
 }
 
+CallbackListPtr PropertyStateCallback;
+
 static void
-deliverPropertyNotifyEvent(WindowPtr pWin, int state, Atom atom)
+deliverPropertyNotifyEvent(WindowPtr pWin, int state, PropertyPtr pProp)
 {
-    xEvent event = {
+    xEvent event;
+    PropertyStateRec rec = {
+        .win = pWin,
+        .prop = pProp,
+        .state = state
+    };
+    UpdateCurrentTimeIf();
+    event = (xEvent) {
         .u.property.window = pWin->drawable.id,
         .u.property.state = state,
-        .u.property.atom = atom,
-        .u.property.time = currentTime.milliseconds
+        .u.property.atom = pProp->propertyName,
+        .u.property.time = currentTime.milliseconds,
     };
     event.u.u.type = PropertyNotify;
+
+    CallCallbacks(&PropertyStateCallback, &rec);
     DeliverEvents(pWin, &event, 1, (WindowPtr) NULL);
 }
 
@@ -136,8 +147,8 @@ ProcRotateProperties(ClientPtr client)
         return rc;
 
     atoms = (Atom *) &stuff[1];
-    props = malloc(stuff->nAtoms * sizeof(PropertyPtr));
-    saved = malloc(stuff->nAtoms * sizeof(PropertyRec));
+    props = xallocarray(stuff->nAtoms, sizeof(PropertyPtr));
+    saved = xallocarray(stuff->nAtoms, sizeof(PropertyRec));
     if (!props || !saved) {
         rc = BadAlloc;
         goto out;
@@ -173,7 +184,7 @@ ProcRotateProperties(ClientPtr client)
             delta += stuff->nAtoms;
         for (i = 0; i < stuff->nAtoms; i++) {
             j = (i + delta) % stuff->nAtoms;
-            deliverPropertyNotifyEvent(pWin, PropertyNewValue, atoms[i]);
+            deliverPropertyNotifyEvent(pWin, PropertyNewValue, props[i]);
 
             /* Preserve name and devPrivates */
             props[j]->type = saved[i].type;
@@ -313,7 +324,7 @@ dixChangeWindowProperty(ClientPtr pClient, WindowPtr pWin, Atom property,
             /* do nothing */
         }
         else if (mode == PropModeAppend) {
-            data = malloc((pProp->size + len) * sizeInBytes);
+            data = xallocarray(pProp->size + len, sizeInBytes);
             if (!data)
                 return BadAlloc;
             memcpy(data, pProp->data, pProp->size * sizeInBytes);
@@ -322,7 +333,7 @@ dixChangeWindowProperty(ClientPtr pClient, WindowPtr pWin, Atom property,
             pProp->size += len;
         }
         else if (mode == PropModePrepend) {
-            data = malloc(sizeInBytes * (len + pProp->size));
+            data = xallocarray(len + pProp->size, sizeInBytes);
             if (!data)
                 return BadAlloc;
             memcpy(data + totalSize, pProp->data, pProp->size * sizeInBytes);
@@ -349,17 +360,9 @@ dixChangeWindowProperty(ClientPtr pClient, WindowPtr pWin, Atom property,
         return rc;
 
     if (sendevent)
-        deliverPropertyNotifyEvent(pWin, PropertyNewValue, pProp->propertyName);
+        deliverPropertyNotifyEvent(pWin, PropertyNewValue, pProp);
 
     return Success;
-}
-
-int
-ChangeWindowProperty(WindowPtr pWin, Atom property, Atom type, int format,
-                     int mode, unsigned long len, void *value, Bool sendevent)
-{
-    return dixChangeWindowProperty(serverClient, pWin, property, type, format,
-                                   mode, len, value, sendevent);
 }
 
 int
@@ -386,7 +389,7 @@ DeleteProperty(ClientPtr client, WindowPtr pWin, Atom propName)
             prevProp->next = pProp->next;
         }
 
-        deliverPropertyNotifyEvent(pWin, PropertyDelete, pProp->propertyName);
+        deliverPropertyNotifyEvent(pWin, PropertyDelete, pProp);
         free(pProp->data);
         dixFreeObjectWithPrivates(pProp, PRIVATE_PROPERTY);
     }
@@ -400,7 +403,7 @@ DeleteAllWindowProperties(WindowPtr pWin)
 
     pProp = wUserProps(pWin);
     while (pProp) {
-        deliverPropertyNotifyEvent(pWin, PropertyDelete, pProp->propertyName);
+        deliverPropertyNotifyEvent(pWin, PropertyDelete, pProp);
         pNextProp = pProp->next;
         free(pProp->data);
         dixFreeObjectWithPrivates(pProp, PRIVATE_PROPERTY);
@@ -523,7 +526,7 @@ ProcGetProperty(ClientPtr client)
     };
 
     if (stuff->delete && (reply.bytesAfter == 0))
-        deliverPropertyNotifyEvent(pWin, PropertyDelete, pProp->propertyName);
+        deliverPropertyNotifyEvent(pWin, PropertyDelete, pProp);
 
     WriteReplyToClient(client, sizeof(xGenericReply), &reply);
     if (len) {
@@ -581,7 +584,7 @@ ProcListProperties(ClientPtr client)
     for (pProp = wUserProps(pWin); pProp; pProp = pProp->next)
         numProps++;
 
-    if (numProps && !(pAtoms = malloc(numProps * sizeof(Atom))))
+    if (numProps && !(pAtoms = xallocarray(numProps, sizeof(Atom))))
         return BadAlloc;
 
     numProps = 0;

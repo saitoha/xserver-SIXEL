@@ -1,0 +1,104 @@
+# IMAGE_TAG is the tag of the docker image used for the build jobs. If the
+# image doesn't exist yet, the docker-image stage generates it.
+#
+# In order to generate a new image, one should generally change the tag.
+# While removing the image from the registry would also work, that's not
+# recommended except for ephemeral images during development: Replacing an
+# image after a significant amount of time might pull in newer versions of
+# gcc/clang or other packages, which might break the build with older commits
+# using the same tag.
+#
+# After merging a change resulting in generating a new image to the main
+# repository, it's recommended to remove the image from the source repository's
+# container registry, so that the image from the main repository's registry
+# will be used there as well.
+variables:
+    IMAGE_TAG: "debian-testing-20190219"
+    IMAGE_LOCAL: "$CI_REGISTRY_IMAGE:$IMAGE_TAG"
+    IMAGE_MAIN: "registry.freedesktop.org/xorg/xserver:$IMAGE_TAG"
+
+stages:
+    - docker-image
+    - build-and-test
+
+debian-testing:
+    stage: docker-image
+    image:
+        name: gcr.io/kaniko-project/executor:debug
+        entrypoint: [""]
+    script:
+        - echo "{\"auths\":{\"$CI_REGISTRY\":{\"username\":\"$CI_REGISTRY_USER\",\"password\":\"$CI_REGISTRY_PASSWORD\"}}}" > /kaniko/.docker/config.json
+        - mkdir kaniko-context
+        - |
+          echo "FROM $IMAGE_LOCAL" > kaniko-context/Dockerfile
+          # If the image exists in the local registry, skip to the build-and-test job
+          set +e
+          set -x
+          /kaniko/executor --context kaniko-context --no-push && exit 0
+          set +x
+          set -e
+        - |
+          echo "FROM $IMAGE_MAIN" > kaniko-context/Dockerfile
+          # Try to re-use the image from the main repository's registry, and if
+          # that fails, generate a local image from scratch
+          set +e
+          set -x
+          /kaniko/executor --context kaniko-context --destination $IMAGE_LOCAL && exit 0
+          set +x
+          set -e
+        - /kaniko/executor --context $CI_PROJECT_DIR/.gitlab-ci --destination $IMAGE_LOCAL
+
+.common-build-and-test:
+    stage: build-and-test
+    image: $IMAGE_LOCAL
+    artifacts:
+        when: on_failure
+        paths:
+            - build/test/piglit-results/
+    cache:
+        paths:
+            - ccache/
+    variables:
+        LC_ALL: C.UTF-8
+    before_script:
+        - export CCACHE_BASEDIR="$PWD"
+        - export CCACHE_DIR="$PWD/ccache"
+        - export CCACHE_COMPILERCHECK=content
+        - export PATH="/usr/lib/ccache:$PATH"
+        - ccache --zero-stats
+        - ccache --show-stats
+    after_script:
+        - CCACHE_DIR="$PWD/ccache" ccache --show-stats
+
+autotools-build-and-test:
+    extends: .common-build-and-test
+    script:
+        - mkdir build/
+        - cd build/
+        - ../autogen.sh --prefix=/usr
+        - make -j$(nproc) distcheck
+        - |
+          export PIGLIT_DIR=/root/piglit XTEST_DIR=/root/xts
+          set +e
+          set -x
+          make -j$(nproc) check
+          status=$?
+          cat test/piglit-results/xvfb/long-summary || :
+          exit $status
+
+meson-build-and-test:
+    extends: .common-build-and-test
+    variables:
+        PIGLIT_DIR: /root/piglit
+        XTEST_DIR: /root/xts
+    script:
+        - meson -Dprefix=/usr build/
+        - |
+          ninja -C build/ install
+          set +e
+          set -x
+          ninja -C build/ test
+          status=$?
+          cat build/meson-logs/testlog.txt
+          cat build/test/piglit-results/xvfb/long-summary || :
+          exit $status

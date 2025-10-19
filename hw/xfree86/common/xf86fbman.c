@@ -38,7 +38,7 @@
 #include "regionstr.h"
 #include "xf86fbman.h"
 
-/* 
+/*
 #define DEBUG
 */
 
@@ -259,7 +259,7 @@ xf86PurgeUnlockedOffscreenAreas(ScreenPtr pScreen)
     return (*funcs->PurgeOffscreenAreas) (pScreen);
 }
 
-/************************************************************\ 
+/************************************************************\
 
    Below is a specific implementation of an offscreen manager.
 
@@ -317,16 +317,17 @@ localRegisterFreeBoxCallback(ScreenPtr pScreen,
 
     offman = (FBManagerPtr) dixLookupPrivate(&pScreen->devPrivates,
                                              xf86FBScreenKey);
-    newCallbacks = realloc(offman->FreeBoxesUpdateCallback,
-                           sizeof(FreeBoxCallbackProcPtr) *
-                           (offman->NumCallbacks + 1));
+    newCallbacks = reallocarray(offman->FreeBoxesUpdateCallback,
+                                offman->NumCallbacks + 1,
+                                sizeof(FreeBoxCallbackProcPtr));
     if (!newCallbacks)
         return FALSE;
     else
         offman->FreeBoxesUpdateCallback = newCallbacks;
 
-    newPrivates = realloc(offman->devPrivates,
-                          sizeof(DevUnion) * (offman->NumCallbacks + 1));
+    newPrivates = reallocarray(offman->devPrivates,
+                               offman->NumCallbacks + 1,
+                               sizeof(DevUnion));
     if (!newPrivates)
         return FALSE;
     else
@@ -1381,7 +1382,7 @@ xf86InitFBManagerLinear(ScreenPtr pScreen, int offset, int size)
     return TRUE;
 }
 
-/* This is an implementation specific function and should 
+/* This is an implementation specific function and should
    disappear after the next release.  People should use the
    real linear functions instead */
 

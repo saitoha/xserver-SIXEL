@@ -177,6 +177,9 @@ DeviceSetProperty(DeviceIntPtr dev, Atom property, XIPropertyValuePtr prop,
             if (!isfinite(f[i]))
                 return BadValue;
 
+        if (!dev->valuator)
+            return BadMatch;
+
         if (!checkonly)
             DeviceSetTransform(dev, f);
     }
@@ -278,6 +281,7 @@ AddInputDevice(ClientPtr client, DeviceProc deviceProc, Bool autoStart)
     dev->startup = autoStart;
 
     /* device grab defaults */
+    UpdateCurrentTimeIf();
     dev->deviceGrab.grabTime = currentTime;
     dev->deviceGrab.ActivateGrab = ActivateKeyboardGrab;
     dev->deviceGrab.DeactivateGrab = DeactivateKeyboardGrab;
@@ -333,12 +337,13 @@ void
 SendDevicePresenceEvent(int deviceid, int type)
 {
     DeviceIntRec dummyDev = { .id =  XIAllDevices };
-    devicePresenceNotify ev = {
-        .type = DevicePresenceNotify,
-        .time = currentTime.milliseconds,
-        .devchange = type,
-        .deviceid = deviceid
-    };
+    devicePresenceNotify ev;
+
+    UpdateCurrentTimeIf();
+    ev.type = DevicePresenceNotify;
+    ev.time = currentTime.milliseconds;
+    ev.devchange = type;
+    ev.deviceid = deviceid;
 
     SendEventToAllWindows(&dummyDev, DevicePresenceNotifyMask,
                           (xEvent *) &ev, 1);
@@ -394,9 +399,11 @@ EnableDevice(DeviceIntPtr dev, BOOL sendevent)
         }
     }
 
+    input_lock();
     if ((*prev != dev) || !dev->inited ||
         ((ret = (*dev->deviceProc) (dev, DEVICE_ON)) != Success)) {
         ErrorF("[dix] couldn't enable device %d\n", dev->id);
+        input_unlock();
         return FALSE;
     }
     dev->enabled = TRUE;
@@ -405,6 +412,7 @@ EnableDevice(DeviceIntPtr dev, BOOL sendevent)
     for (prev = &inputInfo.devices; *prev; prev = &(*prev)->next);
     *prev = dev;
     dev->next = NULL;
+    input_unlock();
 
     enabled = TRUE;
     XIChangeDeviceProperty(dev, XIGetKnownProperty(XI_PROP_ENABLED),
@@ -483,19 +491,19 @@ DisableDevice(DeviceIntPtr dev, BOOL sendevent)
     if (dev->spriteInfo->paired)
         dev->spriteInfo->paired = NULL;
 
+    input_lock();
     (void) (*dev->deviceProc) (dev, DEVICE_OFF);
     dev->enabled = FALSE;
 
-    FreeSprite(dev);
-
-    /* now that the device is disabled, we can reset the signal handler's
+    /* now that the device is disabled, we can reset the event reader's
      * last.slave */
-    OsBlockSignals();
     for (other = inputInfo.devices; other; other = other->next) {
         if (other->last.slave == dev)
             other->last.slave = NULL;
     }
-    OsReleaseSignals();
+    input_unlock();
+
+    FreeSprite(dev);
 
     LeaveWindow(dev);
     SetFocusOut(dev);
@@ -564,7 +572,9 @@ ActivateDevice(DeviceIntPtr dev, BOOL sendevent)
     if (!dev || !dev->deviceProc)
         return BadImplementation;
 
+    input_lock();
     ret = (*dev->deviceProc) (dev, DEVICE_INIT);
+    input_unlock();
     dev->inited = (ret == Success);
     if (!dev->inited)
         return ret;
@@ -699,17 +709,32 @@ CorePointerProc(DeviceIntPtr pDev, int what)
 void
 InitCoreDevices(void)
 {
-    if (AllocDevicePair(serverClient, "Virtual core",
-                        &inputInfo.pointer, &inputInfo.keyboard,
-                        CorePointerProc, CoreKeyboardProc, TRUE) != Success)
-         FatalError("Failed to allocate core devices");
+    int result;
 
-    if (ActivateDevice(inputInfo.pointer, TRUE) != Success ||
-        ActivateDevice(inputInfo.keyboard, TRUE) != Success)
-         FatalError("Failed to activate core devices.");
-    if (!EnableDevice(inputInfo.pointer, TRUE) ||
-        !EnableDevice(inputInfo.keyboard, TRUE))
-         FatalError("Failed to enable core devices.");
+    result = AllocDevicePair(serverClient, "Virtual core",
+                             &inputInfo.pointer, &inputInfo.keyboard,
+                             CorePointerProc, CoreKeyboardProc, TRUE);
+    if (result != Success) {
+        FatalError("Failed to allocate virtual core devices: %d", result);
+    }
+
+    result = ActivateDevice(inputInfo.pointer, TRUE);
+    if (result != Success) {
+        FatalError("Failed to activate virtual core pointer: %d", result);
+    }
+
+    result = ActivateDevice(inputInfo.keyboard, TRUE);
+    if (result != Success) {
+        FatalError("Failed to activate virtual core keyboard: %d", result);
+    }
+
+    if (!EnableDevice(inputInfo.pointer, TRUE)) {
+         FatalError("Failed to enable virtual core pointer.");
+    }
+
+    if (!EnableDevice(inputInfo.keyboard, TRUE)) {
+         FatalError("Failed to enable virtual core keyboard.");
+    }
 
     InitXTestDevices();
 }
@@ -930,6 +955,8 @@ FreeAllDeviceClasses(ClassesPtr classes)
  * enable it again and free associated structs. If you want the device to just
  * be disabled, DisableDevice().
  * Don't call this function directly, use RemoveDevice() instead.
+ *
+ * Called with input lock held.
  */
 static void
 CloseDevice(DeviceIntPtr dev)
@@ -1028,7 +1055,7 @@ CloseDownDevices(void)
 {
     DeviceIntPtr dev;
 
-    OsBlockSignals();
+    input_lock();
 
     /* Float all SDs before closing them. Note that at this point resources
      * (e.g. cursors) have been freed already, so we can't just call
@@ -1055,7 +1082,7 @@ CloseDownDevices(void)
     XkbDeleteRulesDflts();
     XkbDeleteRulesUsed();
 
-    OsReleaseSignals();
+    input_unlock();
 }
 
 /**
@@ -1066,6 +1093,11 @@ void
 AbortDevices(void)
 {
     DeviceIntPtr dev;
+
+    /* Do not call input_lock as we don't know what
+     * state the input thread might be in, and that could
+     * cause a dead-lock.
+     */
     nt_list_for_each_entry(dev, inputInfo.devices, next) {
         if (!IsMaster(dev))
             (*dev->deviceProc) (dev, DEVICE_ABORT);
@@ -1130,6 +1162,8 @@ RemoveDevice(DeviceIntPtr dev, BOOL sendevent)
         flags[dev->id] = XIDeviceDisabled;
     }
 
+    input_lock();
+
     prev = NULL;
     for (tmp = inputInfo.devices; tmp; (prev = tmp), (tmp = next)) {
         next = tmp->next;
@@ -1143,6 +1177,7 @@ RemoveDevice(DeviceIntPtr dev, BOOL sendevent)
             flags[tmp->id] = IsMaster(tmp) ? XIMasterRemoved : XISlaveRemoved;
             CloseDevice(tmp);
             ret = Success;
+            break;
         }
     }
 
@@ -1159,8 +1194,11 @@ RemoveDevice(DeviceIntPtr dev, BOOL sendevent)
                 prev->next = next;
 
             ret = Success;
+            break;
         }
     }
+
+    input_unlock();
 
     if (ret == Success && initialized) {
         inputInfo.numDevices--;
@@ -1212,63 +1250,6 @@ QueryMinMaxKeyCodes(KeyCode *minCode, KeyCode *maxCode)
         *minCode = inputInfo.keyboard->key->xkbInfo->desc->min_key_code;
         *maxCode = inputInfo.keyboard->key->xkbInfo->desc->max_key_code;
     }
-}
-
-/* Notably, this function does not expand the destination's keycode range, or
- * notify clients. */
-Bool
-SetKeySymsMap(KeySymsPtr dst, KeySymsPtr src)
-{
-    int i, j;
-    KeySym *tmp;
-    int rowDif = src->minKeyCode - dst->minKeyCode;
-
-    /* if keysym map size changes, grow map first */
-    if (src->mapWidth < dst->mapWidth) {
-        for (i = src->minKeyCode; i <= src->maxKeyCode; i++) {
-#define SI(r, c) (((r - src->minKeyCode) * src->mapWidth) + (c))
-#define DI(r, c) (((r - dst->minKeyCode) * dst->mapWidth) + (c))
-            for (j = 0; j < src->mapWidth; j++)
-                dst->map[DI(i, j)] = src->map[SI(i, j)];
-            for (j = src->mapWidth; j < dst->mapWidth; j++)
-                dst->map[DI(i, j)] = NoSymbol;
-#undef SI
-#undef DI
-        }
-        return TRUE;
-    }
-    else if (src->mapWidth > dst->mapWidth) {
-        i = sizeof(KeySym) * src->mapWidth *
-            (dst->maxKeyCode - dst->minKeyCode + 1);
-        tmp = calloc(sizeof(KeySym), i);
-        if (!tmp)
-            return FALSE;
-
-        if (dst->map) {
-            for (i = 0; i <= dst->maxKeyCode - dst->minKeyCode; i++)
-                memmove(&tmp[i * src->mapWidth], &dst->map[i * dst->mapWidth],
-                        dst->mapWidth * sizeof(KeySym));
-            free(dst->map);
-        }
-        dst->mapWidth = src->mapWidth;
-        dst->map = tmp;
-    }
-    else if (!dst->map) {
-        i = sizeof(KeySym) * src->mapWidth *
-            (dst->maxKeyCode - dst->minKeyCode + 1);
-        tmp = calloc(sizeof(KeySym), i);
-        if (!tmp)
-            return FALSE;
-
-        dst->map = tmp;
-        dst->mapWidth = src->mapWidth;
-    }
-
-    memmove(&dst->map[rowDif * dst->mapWidth], src->map,
-            (src->maxKeyCode - src->minKeyCode + 1) *
-            dst->mapWidth * sizeof(KeySym));
-
-    return TRUE;
 }
 
 Bool
@@ -1457,6 +1438,7 @@ InitFocusClassDeviceStruct(DeviceIntPtr dev)
     focc = malloc(sizeof(FocusClassRec));
     if (!focc)
         return FALSE;
+    UpdateCurrentTimeIf();
     focc->win = PointerRootWin;
     focc->revert = None;
     focc->time = currentTime;
@@ -1526,8 +1508,8 @@ InitStringFeedbackClassDeviceStruct(DeviceIntPtr dev,
     feedc->ctrl.num_symbols_displayed = 0;
     feedc->ctrl.max_symbols = max_symbols;
     feedc->ctrl.symbols_supported =
-        malloc(sizeof(KeySym) * num_symbols_supported);
-    feedc->ctrl.symbols_displayed = malloc(sizeof(KeySym) * max_symbols);
+        xallocarray(num_symbols_supported, sizeof(KeySym));
+    feedc->ctrl.symbols_displayed = xallocarray(max_symbols, sizeof(KeySym));
     if (!feedc->ctrl.symbols_supported || !feedc->ctrl.symbols_displayed) {
         free(feedc->ctrl.symbols_supported);
         free(feedc->ctrl.symbols_displayed);
@@ -1736,8 +1718,7 @@ ProcSetModifierMapping(ClientPtr client)
                        stuff->numKeyPerModifier);
     if (rc == MappingFailed || rc == -1)
         return BadValue;
-    if (rc != Success && rc != MappingSuccess && rc != MappingFailed &&
-        rc != MappingBusy)
+    if (rc != MappingSuccess && rc != MappingFailed && rc != MappingBusy)
         return rc;
 
     rep.success = rc;
@@ -2280,6 +2261,9 @@ ProcChangePointerControl(ClientPtr client)
     REQUEST(xChangePointerControlReq);
     REQUEST_SIZE_MATCH(xChangePointerControlReq);
 
+    /* If the device has no PtrFeedbackPtr, the xserver has a bug */
+    BUG_RETURN_VAL (!mouse->ptrfeed, BadImplementation);
+
     ctrl = mouse->ptrfeed->ctrl;
     if ((stuff->doAccel != xTrue) && (stuff->doAccel != xFalse)) {
         client->errorValue = stuff->doAccel;
@@ -2350,9 +2334,14 @@ int
 ProcGetPointerControl(ClientPtr client)
 {
     DeviceIntPtr ptr = PickPointer(client);
-    PtrCtrl *ctrl = &ptr->ptrfeed->ctrl;
+    PtrCtrl *ctrl;
     xGetPointerControlReply rep;
     int rc;
+
+    if (ptr->ptrfeed)
+        ctrl = &ptr->ptrfeed->ctrl;
+    else
+        ctrl = &defaultPointerControl;
 
     REQUEST_SIZE_MATCH(xReq);
 
@@ -2409,6 +2398,7 @@ ProcGetMotionEvents(ClientPtr client)
     if (rc != Success)
         return rc;
 
+    UpdateCurrentTimeIf();
     if (mouse->valuator->motionHintWindow)
         MaybeStopHint(mouse, client);
     rep = (xGetMotionEventsReply) {
@@ -2575,7 +2565,7 @@ ReleaseButtonsAndKeys(DeviceIntPtr dev)
     /* Release all keys */
     for (i = 0; k && i < MAP_LENGTH; i++) {
         if (BitIsOn(k->down, i)) {
-            nevents = GetKeyboardEvents(eventlist, dev, KeyRelease, i, NULL);
+            nevents = GetKeyboardEvents(eventlist, dev, KeyRelease, i);
             for (j = 0; j < nevents; j++)
                 mieqProcessDeviceEvent(dev, &eventlist[j], NULL);
         }
@@ -2669,7 +2659,7 @@ GetPairedDevice(DeviceIntPtr dev)
     if (!IsMaster(dev) && !IsFloating(dev))
         dev = GetMaster(dev, MASTER_ATTACHED);
 
-    return dev->spriteInfo->paired;
+    return dev->spriteInfo? dev->spriteInfo->paired: NULL;
 }
 
 /**
@@ -2679,7 +2669,7 @@ GetPairedDevice(DeviceIntPtr dev)
  *   slave.
  * - MASTER_KEYBOARD: the master keyboard for this device or NULL for a
  *   floating slave
- * - MASTER_POINTER: the master keyboard for this device or NULL for a
+ * - MASTER_POINTER: the master pointer for this device or NULL for a
  *   floating slave
  * - POINTER_OR_FLOAT: the master pointer for this device or the device for
  *   a floating slave

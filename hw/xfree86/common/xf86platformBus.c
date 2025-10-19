@@ -40,6 +40,7 @@
 #include "hotplug.h"
 #include "systemd-logind.h"
 
+#include "loaderProcs.h"
 #include "xf86.h"
 #include "xf86_OSproc.h"
 #include "xf86Priv.h"
@@ -59,9 +60,9 @@ struct xf86_platform_device *xf86_platform_devices;
 int
 xf86_add_platform_device(struct OdevAttributes *attribs, Bool unowned)
 {
-    xf86_platform_devices = xnfrealloc(xf86_platform_devices,
-                                   (sizeof(struct xf86_platform_device)
-                                    * (xf86_num_platform_devices + 1)));
+    xf86_platform_devices = xnfreallocarray(xf86_platform_devices,
+                                            xf86_num_platform_devices + 1,
+                                            sizeof(struct xf86_platform_device));
 
     xf86_platform_devices[xf86_num_platform_devices].attribs = attribs;
     xf86_platform_devices[xf86_num_platform_devices].pdev = NULL;
@@ -114,7 +115,19 @@ xf86_find_platform_device_by_devnum(int major, int minor)
 static Bool
 xf86IsPrimaryPlatform(struct xf86_platform_device *plat)
 {
-    return ((primaryBus.type == BUS_PLATFORM) && (plat == primaryBus.id.plat));
+    /* Add max. 1 screen for the IgnorePrimary fallback path */
+    if (xf86ProbeIgnorePrimary && xf86NumScreens == 0)
+        return TRUE;
+
+    if (primaryBus.type == BUS_PLATFORM)
+        return plat == primaryBus.id.plat;
+#ifdef XSERVER_LIBPCIACCESS
+    if (primaryBus.type == BUS_PCI)
+        if (plat->pdev)
+            if (MATCH_PCI_DEVICES(primaryBus.id.pci, plat->pdev))
+                return TRUE;
+#endif
+    return FALSE;
 }
 
 static void
@@ -133,16 +146,9 @@ platform_find_pci_info(struct xf86_platform_device *pd, char *busid)
 
     iter = pci_slot_match_iterator_create(&devmatch);
     info = pci_device_next(iter);
-    if (info) {
+    if (info)
         pd->pdev = info;
-        pci_device_probe(info);
-        if (pci_device_is_boot_vga(info)) {
-            primaryBus.type = BUS_PLATFORM;
-            primaryBus.id.plat = pd;
-        }
-    }
     pci_iterator_destroy(iter);
-
 }
 
 static Bool
@@ -153,8 +159,10 @@ xf86_check_platform_slot(const struct xf86_platform_device *pd)
     for (i = 0; i < xf86NumEntities; i++) {
         const EntityPtr u = xf86Entities[i];
 
-        if (pd->pdev && u->bus.type == BUS_PCI)
-            return !MATCH_PCI_DEVICES(pd->pdev, u->bus.id.pci);
+        if (pd->pdev && u->bus.type == BUS_PCI &&
+            MATCH_PCI_DEVICES(pd->pdev, u->bus.id.pci)) {
+            return FALSE;
+        }
         if ((u->bus.type == BUS_PLATFORM) && (pd == u->bus.id.plat)) {
             return FALSE;
         }
@@ -200,9 +208,10 @@ MatchToken(const char *value, struct xorg_list *patterns,
 }
 
 static Bool
-OutputClassMatches(const XF86ConfOutputClassPtr oclass, int index)
+OutputClassMatches(const XF86ConfOutputClassPtr oclass,
+                   struct xf86_platform_device *dev)
 {
-    char *driver = xf86_platform_odev_attributes(index)->driver;
+    char *driver = dev->attribs->driver;
 
     if (!MatchToken(driver, &oclass->match_driver, strcmp))
         return FALSE;
@@ -210,41 +219,32 @@ OutputClassMatches(const XF86ConfOutputClassPtr oclass, int index)
     return TRUE;
 }
 
-static int
-xf86OutputClassDriverList(int index, char *matches[], int nmatches)
+static void
+xf86OutputClassDriverList(int index, XF86MatchedDrivers *md)
 {
     XF86ConfOutputClassPtr cl;
-    int i = 0;
-
-    if (nmatches == 0)
-        return 0;
 
     for (cl = xf86configptr->conf_outputclass_lst; cl; cl = cl->list.next) {
-        if (OutputClassMatches(cl, index)) {
+        if (OutputClassMatches(cl, &xf86_platform_devices[index])) {
             char *path = xf86_platform_odev_attributes(index)->path;
 
             xf86Msg(X_INFO, "Applying OutputClass \"%s\" to %s\n",
                     cl->identifier, path);
             xf86Msg(X_NONE, "\tloading driver: %s\n", cl->driver);
 
-            matches[i++] = xstrdup(cl->driver);
+            xf86AddMatchedDriver(md, cl->driver);
         }
-
-        if (i >= nmatches)
-            break;
     }
-
-    return i;
 }
 
 /**
  *  @return The numbers of found devices that match with the current system
  *  drivers.
  */
-int
-xf86PlatformMatchDriver(char *matches[], int nmatches)
+void
+xf86PlatformMatchDriver(XF86MatchedDrivers *md)
 {
-    int i, j = 0;
+    int i;
     struct pci_device *info = NULL;
     int pass = 0;
 
@@ -256,21 +256,19 @@ xf86PlatformMatchDriver(char *matches[], int nmatches)
             else if (!xf86IsPrimaryPlatform(&xf86_platform_devices[i]) && (pass == 0))
                 continue;
 
-            j += xf86OutputClassDriverList(i, &matches[j], nmatches - j);
+            xf86OutputClassDriverList(i, md);
 
             info = xf86_platform_devices[i].pdev;
 #ifdef __linux__
             if (info)
-                j += xf86MatchDriverFromFiles(info->vendor_id, info->device_id,
-                                              &matches[j], nmatches - j);
+                xf86MatchDriverFromFiles(info->vendor_id, info->device_id, md);
 #endif
 
-            if ((info != NULL) && (j < nmatches)) {
-                j += xf86VideoPtrToDriverList(info, &(matches[j]), nmatches - j);
+            if (info != NULL) {
+                xf86VideoPtrToDriverList(info, md);
             }
         }
     }
-    return j;
 }
 
 int
@@ -278,6 +276,9 @@ xf86platformProbe(void)
 {
     int i;
     Bool pci = TRUE;
+    XF86ConfOutputClassPtr cl, cl_head = (xf86configptr) ?
+            xf86configptr->conf_outputclass_lst : NULL;
+    char *old_path, *path = NULL;
 
     config_odev_probe(xf86PlatformDeviceProbe);
 
@@ -291,8 +292,103 @@ xf86platformProbe(void)
         if (pci && (strncmp(busid, "pci:", 4) == 0)) {
             platform_find_pci_info(&xf86_platform_devices[i], busid);
         }
+
+        /*
+         * Deal with OutputClass ModulePath directives, these must be
+         * processed before we do any module loading.
+         */
+        for (cl = cl_head; cl; cl = cl->list.next) {
+            if (!OutputClassMatches(cl, &xf86_platform_devices[i]))
+                continue;
+
+            if (cl->modulepath && xf86ModPathFrom != X_CMDLINE) {
+                old_path = path;
+                XNFasprintf(&path, "%s,%s", cl->modulepath,
+                            path ? path : xf86ModulePath);
+                free(old_path);
+                xf86Msg(X_CONFIG, "OutputClass \"%s\" ModulePath extended to \"%s\"\n",
+                        cl->identifier, path);
+                LoaderSetPath(path);
+            }
+        }
     }
+
+    free(path);
+
+    /* First see if there is an OutputClass match marking a device as primary */
+    for (i = 0; i < xf86_num_platform_devices; i++) {
+        struct xf86_platform_device *dev = &xf86_platform_devices[i];
+        for (cl = cl_head; cl; cl = cl->list.next) {
+            if (!OutputClassMatches(cl, dev))
+                continue;
+
+            if (xf86CheckBoolOption(cl->option_lst, "PrimaryGPU", FALSE)) {
+                xf86Msg(X_CONFIG, "OutputClass \"%s\" setting %s as PrimaryGPU\n",
+                        cl->identifier, dev->attribs->path);
+                primaryBus.type = BUS_PLATFORM;
+                primaryBus.id.plat = dev;
+                return 0;
+            }
+        }
+    }
+
+    /* Then check for pci_device_is_boot_vga() */
+    for (i = 0; i < xf86_num_platform_devices; i++) {
+        struct xf86_platform_device *dev = &xf86_platform_devices[i];
+
+        if (!dev->pdev)
+            continue;
+
+        pci_device_probe(dev->pdev);
+        if (pci_device_is_boot_vga(dev->pdev)) {
+            primaryBus.type = BUS_PLATFORM;
+            primaryBus.id.plat = dev;
+        }
+    }
+
     return 0;
+}
+
+void
+xf86MergeOutputClassOptions(int entityIndex, void **options)
+{
+    const EntityPtr entity = xf86Entities[entityIndex];
+    struct xf86_platform_device *dev = NULL;
+    XF86ConfOutputClassPtr cl;
+    XF86OptionPtr classopts;
+    int i = 0;
+
+    switch (entity->bus.type) {
+    case BUS_PLATFORM:
+        dev = entity->bus.id.plat;
+        break;
+    case BUS_PCI:
+        for (i = 0; i < xf86_num_platform_devices; i++) {
+            if (MATCH_PCI_DEVICES(xf86_platform_devices[i].pdev,
+                                  entity->bus.id.pci)) {
+                dev = &xf86_platform_devices[i];
+                break;
+            }
+        }
+        break;
+    default:
+        xf86Msg(X_DEBUG, "xf86MergeOutputClassOptions unsupported bus type %d\n",
+                entity->bus.type);
+    }
+
+    if (!dev)
+        return;
+
+    for (cl = xf86configptr->conf_outputclass_lst; cl; cl = cl->list.next) {
+        if (!OutputClassMatches(cl, dev) || !cl->option_lst)
+            continue;
+
+        xf86Msg(X_INFO, "Applying OutputClass \"%s\" options to %s\n",
+                cl->identifier, dev->attribs->path);
+
+        classopts = xf86optionListDup(cl->option_lst);
+        *options = xf86optionListMerge(*options, classopts);
+    }
 }
 
 static int
@@ -416,6 +512,19 @@ probeSingleDevice(struct xf86_platform_device *dev, DriverPtr drvp, GDevPtr gdev
     return foundScreen;
 }
 
+static Bool
+isGPUDevice(GDevPtr gdev)
+{
+    int i;
+
+    for (i = 0; i < gdev->myScreenSection->num_gpu_devices; i++) {
+        if (gdev == gdev->myScreenSection->gpu_devices[i])
+            return TRUE;
+    }
+
+    return FALSE;
+}
+
 int
 xf86platformProbeDev(DriverPtr drvp)
 {
@@ -426,6 +535,10 @@ xf86platformProbeDev(DriverPtr drvp)
 
     /* find the main device or any device specificed in xorg.conf */
     for (i = 0; i < numDevs; i++) {
+        /* skip inactive devices */
+        if (!devList[i]->active)
+            continue;
+
         for (j = 0; j < xf86_num_platform_devices; j++) {
             if (devList[i]->busID && *devList[i]->busID) {
                 if (xf86PlatformDeviceCheckBusID(&xf86_platform_devices[j], devList[i]->busID))
@@ -444,17 +557,39 @@ xf86platformProbeDev(DriverPtr drvp)
         if (j == xf86_num_platform_devices)
              continue;
 
-        foundScreen = probeSingleDevice(&xf86_platform_devices[j], drvp, devList[i], 0);
-        if (!foundScreen)
-            continue;
+        foundScreen = probeSingleDevice(&xf86_platform_devices[j], drvp, devList[i],
+                                        isGPUDevice(devList[i]) ? PLATFORM_PROBE_GPU_SCREEN : 0);
     }
 
-    /* if autoaddgpu devices is enabled then go find a few more and add them as GPU screens */
-    if (xf86Info.autoAddGPU && numDevs) {
+    free(devList);
+
+    return foundScreen;
+}
+
+int
+xf86platformAddGPUDevices(DriverPtr drvp)
+{
+    Bool foundScreen = FALSE;
+    GDevPtr *devList;
+    int j;
+
+    if (!drvp->platformProbe)
+        return FALSE;
+
+    xf86MatchDevice(drvp->driverName, &devList);
+
+    /* if autoaddgpu devices is enabled then go find any unclaimed platform
+     * devices and add them as GPU screens */
+    if (xf86Info.autoAddGPU) {
         for (j = 0; j < xf86_num_platform_devices; j++) {
-            probeSingleDevice(&xf86_platform_devices[j], drvp, devList[0], PLATFORM_PROBE_GPU_SCREEN);
+            if (probeSingleDevice(&xf86_platform_devices[j], drvp,
+                                  devList ?  devList[0] : NULL,
+                                  PLATFORM_PROBE_GPU_SCREEN))
+                foundScreen = TRUE;
         }
     }
+
+    free(devList);
 
     return foundScreen;
 }
@@ -466,6 +601,9 @@ xf86platformAddDevice(int index)
     DriverPtr drvp = NULL;
     screenLayoutPtr layout;
     static const char *hotplug_driver_name = "modesetting";
+
+    if (!xf86Info.autoAddGPU)
+        return -1;
 
     /* force load the driver for now */
     xf86LoadOneModule(hotplug_driver_name, NULL);
@@ -497,7 +635,7 @@ xf86platformAddDevice(int index)
 
     if (xf86GPUScreens[i]->PreInit &&
         xf86GPUScreens[i]->PreInit(xf86GPUScreens[i], 0))
-        xf86GPUScreens[i]->configured = TRUE; 
+        xf86GPUScreens[i]->configured = TRUE;
 
     if (!xf86GPUScreens[i]->configured) {
         ErrorF("hotplugged device %d didn't configure\n", i);

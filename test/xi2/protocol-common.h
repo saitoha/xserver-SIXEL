@@ -30,6 +30,8 @@
 #include "exevents.h"
 #include <assert.h>
 
+#include "tests.h"
+
 #ifndef PROTOCOL_COMMON_H
 #define PROTOCOL_COMMON_H
 
@@ -97,7 +99,7 @@ extern void *global_userdata;
  * The reply handler called from WriteToClient. Set this handler if you need
  * to check the reply values.
  */
-void (*reply_handler) (ClientPtr client, int len, char *data, void *userdata);
+extern void (*reply_handler) (ClientPtr client, int len, char *data, void *userdata);
 
 /**
  * The default screen used for the windows. Initialized by init_simple().
@@ -142,8 +144,8 @@ void init_simple(void);
 
 /* Declarations for various overrides in the test files. */
 void __wrap_WriteToClient(ClientPtr client, int len, void *data);
-int __wrap_XISetEventMask(DeviceIntPtr dev, WindowPtr win, int len,
-                          unsigned char *mask);
+int __wrap_XISetEventMask(DeviceIntPtr dev, WindowPtr win, ClientPtr client,
+                          int len, unsigned char *mask);
 int __wrap_dixLookupWindow(WindowPtr *win, XID id, ClientPtr client,
                            Mask access);
 int __real_dixLookupWindow(WindowPtr *win, XID id, ClientPtr client,

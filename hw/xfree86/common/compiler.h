@@ -98,9 +98,9 @@
 #if defined(DO_PROTOTYPES)
 #if !defined(__arm__)
 #if !defined(__sparc__) && !defined(__arm32__) && !defined(__nds32__) \
-      && !(defined(__alpha__) && defined(linux)) \
-      && !(defined(__ia64__) && defined(linux)) \
-      && !(defined(__mips64) && defined(linux)) \
+      && !(defined(__alpha__) && defined(__linux__)) \
+      && !(defined(__ia64__) && defined(__linux__)) \
+      && !(defined(__mips64) && defined(__linux__)) \
 
 extern _X_EXPORT void outb(unsigned short, unsigned char);
 extern _X_EXPORT void outw(unsigned short, unsigned short);
@@ -215,7 +215,7 @@ extern _X_EXPORT void xf86WriteMmio32Le (void *, unsigned long, unsigned int);
 #ifdef __GNUC__
 #if defined(__alpha__)
 
-#ifdef linux
+#ifdef __linux__
 /* for Linux on Alpha, we use the LIBC _inx/_outx routines */
 /* note that the appropriate setup via "ioperm" needs to be done */
 /*  *before* any inx/outx is done. */
@@ -263,7 +263,7 @@ inl(unsigned long port)
     return _inl(port);
 }
 
-#endif                          /* linux */
+#endif                          /* __linux__ */
 
 #if (defined(__FreeBSD__) || defined(__OpenBSD__)) \
       && !defined(DO_PROTOTYPES)
@@ -286,7 +286,7 @@ extern _X_EXPORT unsigned int inl(unsigned int port);
 #include <machine/pio.h>
 #endif                          /* __NetBSD__ */
 
-#elif defined(__amd64__)
+#elif defined(__amd64__) || defined(__i386__) || defined(__ia64__)
 
 #include <inttypes.h>
 
@@ -570,7 +570,7 @@ inl(unsigned PORT_SIZE port)
 }
 
 #if defined(__mips__)
-#ifdef linux                    /* don't mess with other OSs */
+#ifdef __linux__                    /* don't mess with other OSs */
 #if X_BYTE_ORDER == X_BIG_ENDIAN
 static __inline__ unsigned int
 xf86ReadMmio32Be(__volatile__ void *base, const unsigned long offset)
@@ -594,7 +594,7 @@ xf86WriteMmio32Be(__volatile__ void *base, const unsigned long offset,
                          :"r"(val), "r"(addr));
 }
 #endif
-#endif                          /* !linux */
+#endif                          /* !__linux__ */
 #endif                          /* __mips__ */
 
 #elif defined(__powerpc__)
@@ -757,36 +757,6 @@ inl(unsigned short port)
         return 0;
     return xf86ReadMmio32Le((void *) ioBase, port);
 }
-
-#elif defined(__arm__) && defined(__linux__)
-
-/* for Linux on ARM, we use the LIBC inx/outx routines */
-/* note that the appropriate setup via "ioperm" needs to be done */
-/*  *before* any inx/outx is done. */
-
-#include <sys/io.h>
-
-static __inline__ void
-xf_outb(unsigned short port, unsigned char val)
-{
-    outb(val, port);
-}
-
-static __inline__ void
-xf_outw(unsigned short port, unsigned short val)
-{
-    outw(val, port);
-}
-
-static __inline__ void
-xf_outl(unsigned short port, unsigned int val)
-{
-    outl(val, port);
-}
-
-#define outb xf_outb
-#define outw xf_outw
-#define outl xf_outl
 
 #elif defined(__nds32__)
 
@@ -967,53 +937,6 @@ inl(unsigned PORT_SIZE port)
 
 #endif                          /* NDS32_MMIO_SWAP */
 
-#elif defined(__i386__) || defined(__ia64__)
-
-static __inline__ void
-outb(unsigned short port, unsigned char val)
-{
-    __asm__ __volatile__("out%B0 (%1)"::"a"(val), "d"(port));
-}
-
-static __inline__ void
-outw(unsigned short port, unsigned short val)
-{
-    __asm__ __volatile__("out%W0 (%1)"::"a"(val), "d"(port));
-}
-
-static __inline__ void
-outl(unsigned short port, unsigned int val)
-{
-    __asm__ __volatile__("out%L0 (%1)"::"a"(val), "d"(port));
-}
-
-static __inline__ unsigned int
-inb(unsigned short port)
-{
-    unsigned char ret;
-    __asm__ __volatile__("in%B0 (%1)":"=a"(ret):"d"(port));
-
-    return ret;
-}
-
-static __inline__ unsigned int
-inw(unsigned short port)
-{
-    unsigned short ret;
-    __asm__ __volatile__("in%W0 (%1)":"=a"(ret):"d"(port));
-
-    return ret;
-}
-
-static __inline__ unsigned int
-inl(unsigned short port)
-{
-    unsigned int ret;
-    __asm__ __volatile__("in%L0 (%1)":"=a"(ret):"d"(port));
-
-    return ret;
-}
-
 #endif                          /* arch madness */
 
 #else                           /* !GNUC */
@@ -1033,53 +956,69 @@ inl(unsigned short port)
 #endif
 
 #ifdef __alpha__
-/* entry points for Mmio memory access routines */
-extern _X_EXPORT int (*xf86ReadMmio8) (void *, unsigned long);
-extern _X_EXPORT int (*xf86ReadMmio16) (void *, unsigned long);
+static inline int
+xf86ReadMmio8(void *Base, unsigned long Offset)
+{
+    mem_barrier();
+    return *(CARD8 *) ((unsigned long) Base + (Offset));
+}
 
-#ifndef STANDALONE_MMIO
-extern _X_EXPORT int (*xf86ReadMmio32) (void *, unsigned long);
-#else
-/* Some DRI 3D drivers need MMIO_IN32. */
-static __inline__ int
+static inline int
+xf86ReadMmio16(void *Base, unsigned long Offset)
+{
+    mem_barrier();
+    return *(CARD16 *) ((unsigned long) Base + (Offset));
+}
+
+static inline int
 xf86ReadMmio32(void *Base, unsigned long Offset)
 {
     mem_barrier();
-    return *(volatile unsigned int *) ((unsigned long) Base + (Offset));
+    return *(CARD32 *) ((unsigned long) Base + (Offset));
 }
-#endif
-extern _X_EXPORT void (*xf86WriteMmio8) (int, void *, unsigned long);
-extern _X_EXPORT void (*xf86WriteMmio16) (int, void *, unsigned long);
-extern _X_EXPORT void (*xf86WriteMmio32) (int, void *, unsigned long);
+
+static inline void
+xf86WriteMmio8(int Value, void *Base, unsigned long Offset)
+{
+    write_mem_barrier();
+    *(CARD8 *) ((unsigned long) Base + (Offset)) = Value;
+}
+
+static inline void
+xf86WriteMmio16(int Value, void *Base, unsigned long Offset)
+{
+    write_mem_barrier();
+    *(CARD16 *) ((unsigned long) Base + (Offset)) = Value;
+}
+
+static inline void
+xf86WriteMmio32(int Value, void *Base, unsigned long Offset)
+{
+    write_mem_barrier();
+    *(CARD32 *) ((unsigned long) Base + (Offset)) = Value;
+}
+
 extern _X_EXPORT void xf86SlowBCopyFromBus(unsigned char *, unsigned char *,
                                            int);
 extern _X_EXPORT void xf86SlowBCopyToBus(unsigned char *, unsigned char *, int);
 
 /* Some macros to hide the system dependencies for MMIO accesses */
 /* Changed to kill noise generated by gcc's -Wcast-align */
-#define MMIO_IN8(base, offset) (*xf86ReadMmio8)(base, offset)
-#define MMIO_IN16(base, offset) (*xf86ReadMmio16)(base, offset)
-#ifndef STANDALONE_MMIO
-#define MMIO_IN32(base, offset) (*xf86ReadMmio32)(base, offset)
-#else
+#define MMIO_IN8(base, offset) xf86ReadMmio8(base, offset)
+#define MMIO_IN16(base, offset) xf86ReadMmio16(base, offset)
 #define MMIO_IN32(base, offset) xf86ReadMmio32(base, offset)
-#endif
-
-#define MMIO_OUT32(base, offset, val) \
-    do { \
-	write_mem_barrier(); \
-	*(volatile CARD32 *)(void *)(((CARD8*)(base)) + (offset)) = (val); \
-    } while (0)
 
 #define MMIO_OUT8(base, offset, val) \
-    (*xf86WriteMmio8)((CARD8)(val), base, offset)
+    xf86WriteMmio8((CARD8)(val), base, offset)
 #define MMIO_OUT16(base, offset, val) \
-    (*xf86WriteMmio16)((CARD16)(val), base, offset)
+    xf86WriteMmio16((CARD16)(val), base, offset)
+#define MMIO_OUT32(base, offset, val) \
+    xf86WriteMmio32((CARD32)(val), base, offset)
 
 #elif defined(__powerpc__) || defined(__sparc__)
- /* 
+ /*
   * we provide byteswapping and no byteswapping functions here
-  * with byteswapping as default, 
+  * with byteswapping as default,
   * drivers that don't need byteswapping should define MMIO_IS_BE
   */
 #define MMIO_IN8(base, offset) xf86ReadMmio8(base, offset)

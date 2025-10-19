@@ -1,18 +1,18 @@
 /*
  * (C) Copyright IBM Corporation 2005
  * All Rights Reserved.
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
  * to deal in the Software without restriction, including without limitation
  * the rights to use, copy, modify, merge, publish, distribute, sub license,
  * and/or sell copies of the Software, and to permit persons to whom the
  * Software is furnished to do so, subject to the following conditions:
- * 
+ *
  * The above copyright notice and this permission notice (including the next
  * paragraph) shall be included in all copies or substantial portions of the
  * Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.  IN NO EVENT SHALL
@@ -45,8 +45,6 @@
 
 #define __GLX_PAD(a) (((a)+3)&~3)
 
-extern xGLXSingleReply __glXReply;
-
 GLint
 __glGetBooleanv_variable_size(GLenum e)
 {
@@ -73,11 +71,16 @@ __glXGetAnswerBuffer(__GLXclientState * cl, size_t required_size,
                      void *local_buffer, size_t local_size, unsigned alignment)
 {
     void *buffer = local_buffer;
-    const unsigned mask = alignment - 1;
+    const intptr_t mask = alignment - 1;
 
     if (local_size < required_size) {
-        const size_t worst_case_size = required_size + alignment;
+        size_t worst_case_size;
         intptr_t temp_buf;
+
+        if (required_size < SIZE_MAX - alignment)
+            worst_case_size = required_size + alignment;
+        else
+            return NULL;
 
         if (cl->returnBufSize < worst_case_size) {
             void *temp = realloc(cl->returnBuf, worst_case_size);
@@ -112,6 +115,7 @@ __glXSendReply(ClientPtr client, const void *data, size_t elements,
                size_t element_size, GLboolean always_array, CARD32 retval)
 {
     size_t reply_ints = 0;
+    xGLXSingleReply reply = { 0, };
 
     if (__glXErrorOccured()) {
         elements = 0;
@@ -120,11 +124,11 @@ __glXSendReply(ClientPtr client, const void *data, size_t elements,
         reply_ints = bytes_to_int32(elements * element_size);
     }
 
-    __glXReply.length = reply_ints;
-    __glXReply.type = X_Reply;
-    __glXReply.sequenceNumber = client->sequence;
-    __glXReply.size = elements;
-    __glXReply.retval = retval;
+    reply.length = reply_ints;
+    reply.type = X_Reply;
+    reply.sequenceNumber = client->sequence;
+    reply.size = elements;
+    reply.retval = retval;
 
     /* It is faster on almost always every architecture to just copy the 8
      * bytes, even when not necessary, than check to see of the value of
@@ -132,8 +136,8 @@ __glXSendReply(ClientPtr client, const void *data, size_t elements,
      * harm.
      */
 
-    (void) memcpy(&__glXReply.pad3, data, 8);
-    WriteToClient(client, sz_xGLXSingleReply, &__glXReply);
+    (void) memcpy(&reply.pad3, data, 8);
+    WriteToClient(client, sz_xGLXSingleReply, &reply);
 
     if (reply_ints != 0) {
         WriteToClient(client, reply_ints * 4, data);
@@ -158,6 +162,7 @@ __glXSendReplySwap(ClientPtr client, const void *data, size_t elements,
                    size_t element_size, GLboolean always_array, CARD32 retval)
 {
     size_t reply_ints = 0;
+    xGLXSingleReply reply = { 0, };
 
     if (__glXErrorOccured()) {
         elements = 0;
@@ -166,11 +171,11 @@ __glXSendReplySwap(ClientPtr client, const void *data, size_t elements,
         reply_ints = bytes_to_int32(elements * element_size);
     }
 
-    __glXReply.length = bswap_32(reply_ints);
-    __glXReply.type = X_Reply;
-    __glXReply.sequenceNumber = bswap_16(client->sequence);
-    __glXReply.size = bswap_32(elements);
-    __glXReply.retval = bswap_32(retval);
+    reply.length = bswap_32(reply_ints);
+    reply.type = X_Reply;
+    reply.sequenceNumber = bswap_16(client->sequence);
+    reply.size = bswap_32(elements);
+    reply.retval = bswap_32(retval);
 
     /* It is faster on almost always every architecture to just copy the 8
      * bytes, even when not necessary, than check to see of the value of
@@ -178,8 +183,8 @@ __glXSendReplySwap(ClientPtr client, const void *data, size_t elements,
      * harm.
      */
 
-    (void) memcpy(&__glXReply.pad3, data, 8);
-    WriteToClient(client, sz_xGLXSingleReply, &__glXReply);
+    (void) memcpy(&reply.pad3, data, 8);
+    WriteToClient(client, sz_xGLXSingleReply, &reply);
 
     if (reply_ints != 0) {
         WriteToClient(client, reply_ints * 4, data);
@@ -205,7 +210,7 @@ get_decode_index(const struct __glXDispatchInfo *dispatch_info, unsigned opcode)
         unsigned child_index;
 
         /* Calculate the slice of bits used by this node.
-         * 
+         *
          * If remaining_bits = 8 and tree[index] = 3, the mask of just the
          * remaining bits is 0x00ff and the mask for the remaining bits after
          * this node is 0x001f.  By taking 0x00ff & ~0x001f, we get 0x00e0.

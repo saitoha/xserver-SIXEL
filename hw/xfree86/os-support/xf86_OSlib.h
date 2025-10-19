@@ -15,19 +15,19 @@
  * documentation for any purpose is hereby granted without fee, provided that
  * the above copyright notice appear in all copies and that both that
  * copyright notice and this permission notice appear in supporting
- * documentation, and that the names of the above listed copyright holders 
- * not be used in advertising or publicity pertaining to distribution of 
+ * documentation, and that the names of the above listed copyright holders
+ * not be used in advertising or publicity pertaining to distribution of
  * the software without specific, written prior permission.  The above listed
- * copyright holders make no representations about the suitability of this 
- * software for any purpose.  It is provided "as is" without express or 
+ * copyright holders make no representations about the suitability of this
+ * software for any purpose.  It is provided "as is" without express or
  * implied warranty.
  *
- * THE ABOVE LISTED COPYRIGHT HOLDERS DISCLAIM ALL WARRANTIES WITH REGARD 
- * TO THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY 
- * AND FITNESS, IN NO EVENT SHALL THE ABOVE LISTED COPYRIGHT HOLDERS BE 
- * LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY 
- * DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER 
- * IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING 
+ * THE ABOVE LISTED COPYRIGHT HOLDERS DISCLAIM ALL WARRANTIES WITH REGARD
+ * TO THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+ * AND FITNESS, IN NO EVENT SHALL THE ABOVE LISTED COPYRIGHT HOLDERS BE
+ * LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY
+ * DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER
+ * IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
  * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
  */
@@ -37,7 +37,7 @@
  *
  * Copyright 1997
  * Digital Equipment Corporation. All rights reserved.
- * This software is furnished under license and may be used and copied only in 
+ * This software is furnished under license and may be used and copied only in
  * accordance with the following terms and conditions.  Subject to these
  * conditions, you may download, copy, install, use, modify and distribute
  * this software in source and/or binary form. No title or ownership is
@@ -47,7 +47,7 @@
  *    this copyright notice and list of conditions as they appear in the
  *    source file.
  *
- * 2) No right is granted to use any trade name, trademark, or logo of Digital 
+ * 2) No right is granted to use any trade name, trademark, or logo of Digital
  *    Equipment Corporation. Neither the "Digital Equipment Corporation"
  *    name nor any trademark or logo of Digital Equipment Corporation may be
  *    used to endorse or promote products derived from this software without
@@ -59,9 +59,9 @@
  *    In no event shall DIGITAL be liable for any damages whatsoever, and in
  *    particular, DIGITAL shall not be liable for special, indirect,
  *    consequential, or incidental damages or damages for lost profits, loss
- *    of revenue or loss of use, whether such damages arise in contract, 
+ *    of revenue or loss of use, whether such damages arise in contract,
  *    negligence, tort, under statute, in equity, at law or otherwise, even
- *    if advised of the possibility of such damage. 
+ *    if advised of the possibility of such damage.
  *
  */
 
@@ -84,7 +84,7 @@
 /* SYSV386 (SVR3, SVR4), including Solaris                                */
 /**************************************************************************/
 #if (defined(SYSV) || defined(SVR4)) && \
-    (defined(sun) || defined(__i386__))
+    (defined(__sun) || defined(__i386__))
 #include <sys/ioctl.h>
 #include <signal.h>
 #include <termio.h>
@@ -94,21 +94,21 @@
 #include <errno.h>
 
 #if defined(_NEED_SYSI86)
-#if !(defined (sun) && defined (SVR4))
+#if !(defined (__sun) && defined (SVR4))
 #include <sys/immu.h>
 #include <sys/region.h>
 #include <sys/proc.h>
 #endif
 #include <sys/tss.h>
 #include <sys/sysi86.h>
-#if defined(SVR4) && !defined(sun)
+#if defined(SVR4) && !defined(__sun)
 #include <sys/seg.h>
-#endif                          /* SVR4 && !sun */
+#endif                          /* SVR4 && !__sun */
 /* V86SC_IOPL was moved to <sys/sysi86.h> on Solaris 7 and later */
 #if !defined(V86SC_IOPL)        /* Solaris 7 or later? */
 #include <sys/v86.h>            /* Nope */
 #endif
-#if defined(sun) && (defined (__i386__) || defined(__i386) || defined(__x86))  && defined (SVR4)
+#if defined(__sun) && (defined (__i386__) || defined(__i386) || defined(__x86))  && defined (SVR4)
 #include <sys/psw.h>
 #endif
 #endif                          /* _NEED_SYSI86 */
@@ -122,22 +122,27 @@
 #include <sys/mmap.h>           /* MMAP driver header */
 #endif
 
-#if !defined(sun) || defined(HAVE_SYS_VT_H)
+#if !defined(__sun) || defined(HAVE_SYS_VT_H)
 #define HAS_USL_VTS
 #endif
-#if !defined(sun)
+#if !defined(__sun)
 #include <sys/emap.h>
 #endif
 #if   defined(HAS_USL_VTS)
-#if !defined(sun)
+#if !defined(__sun)
 #include <sys/at_ansi.h>
 #endif
 #include <sys/kd.h>
 #include <sys/vt.h>
+
+extern _X_HIDDEN void xf86VTAcquire(int);
+extern _X_HIDDEN void xf86VTRelease(int);
 #endif
 
-#if defined(sun)
+#if defined(__sun)
 #include <sys/fbio.h>
+extern _X_HIDDEN char xf86SolarisFbDev[PATH_MAX];
+
 #include <sys/kbd.h>
 #include <sys/kbio.h>
 
@@ -151,7 +156,7 @@
 #define LED_NUM LED_NUM_LOCK
 #define LED_SCR LED_SCROLL_LOCK
 #define LED_COMP LED_COMPOSE
-#endif                          /* sun */
+#endif                          /* __sun */
 
 #if !defined(VT_ACKACQ)
 #define VT_ACKACQ 2
@@ -159,7 +164,7 @@
 
 #if defined(SVR4)
 #include <sys/mman.h>
-#if !(defined(sun) && defined (SVR4))
+#if !(defined(__sun) && defined (SVR4))
 #define DEV_MEM "/dev/pmem"
 #endif
 #define CLEARDTR_SUPPORT
@@ -178,11 +183,7 @@
 #include <sys/types.h>
 #include <assert.h>
 
-#ifdef __linux__
-#include <termio.h>
-#else                           /* __GLIBC__ */
 #include <termios.h>
-#endif
 #ifdef __sparc__
 #include <sys/param.h>
 #endif
@@ -207,12 +208,8 @@
 #endif                          /* __linux__ || __GLIBC__ */
 
 /**************************************************************************/
-/* 386BSD and derivatives,  BSD/386                                       */
+/* System is BSD-like                                                     */
 /**************************************************************************/
-
-#if defined(__386BSD__) && (defined(__FreeBSD__) || defined(__NetBSD__))
-#undef __386BSD__
-#endif
 
 #ifdef CSRG_BASED
 #include <sys/ioctl.h>
@@ -241,8 +238,6 @@
 #define __FreeBSD_kernel_version __FreeBSD_version
 #endif
 
-#if !defined(LINKKIT)
-  /* Don't need this stuff for the Link Kit */
 #ifdef SYSCONS_SUPPORT
 #define COMPAT_SYSCONS
 #if defined(__FreeBSD__) || defined(__FreeBSD_kernel__) || defined(__DragonFly__)
@@ -308,7 +303,6 @@ struct pcvtid {
 #ifndef CONSOLE_GET_MEM_INFO
 #define CONSOLE_GET_MEM_INFO            _IOR('t',159,struct map_info)
 #endif
-#endif                          /* !LINKKIT */
 
 #if defined(USE_I386_IOPL) || defined(USE_AMD64_IOPL)
 #include <machine/sysarch.h>
@@ -331,7 +325,7 @@ struct pcvtid {
 /* For PATH_MAX */
 #include "misc.h"
 
-/* 
+/*
  * Hack originally for ISC 2.2 POSIX headers, but may apply elsewhere,
  * and it's safe, so just do it.
  */
@@ -343,13 +337,7 @@ struct pcvtid {
 #define MAXHOSTNAMELEN 32
 #endif                          /* !MAXHOSTNAMELEN */
 
-#if defined(_POSIX_SOURCE)
 #include <limits.h>
-#else
-#define _POSIX_SOURCE
-#include <limits.h>
-#undef _POSIX_SOURCE
-#endif                          /* _POSIX_SOURCE */
 
 #ifndef DEV_MEM
 #define DEV_MEM "/dev/mem"

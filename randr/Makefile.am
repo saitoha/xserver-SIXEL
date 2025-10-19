@@ -14,7 +14,9 @@ librandr_la_SOURCES =	\
 	rrcrtc.c	\
 	rrdispatch.c	\
 	rrinfo.c	\
+	rrlease.c	\
 	rrmode.c	\
+	rrmonitor.c	\
 	rroutput.c	\
 	rrpointer.c	\
 	rrproperty.c	\

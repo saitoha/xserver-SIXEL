@@ -6,19 +6,19 @@ software and its documentation for any purpose and without
 fee is hereby granted, provided that the above copyright
 notice appear in all copies and that both that copyright
 notice and this permission notice appear in supporting
-documentation, and that the name of Silicon Graphics not be 
-used in advertising or publicity pertaining to distribution 
+documentation, and that the name of Silicon Graphics not be
+used in advertising or publicity pertaining to distribution
 of the software without specific prior written permission.
-Silicon Graphics makes no representation about the suitability 
+Silicon Graphics makes no representation about the suitability
 of this software for any purpose. It is provided "as is"
 without any express or implied warranty.
 
-SILICON GRAPHICS DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS 
-SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY 
+SILICON GRAPHICS DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS
+SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
 AND FITNESS FOR A PARTICULAR PURPOSE. IN NO EVENT SHALL SILICON
-GRAPHICS BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL 
-DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, 
-DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE 
+GRAPHICS BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE,
+DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE
 OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION  WITH
 THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
@@ -60,7 +60,7 @@ THE USE OR PERFORMANCE OF THIS SOFTWARE.
 #define	LED_NUM		5
 #define	PHYS_LEDS	0x1f
 #else
-#ifdef sun
+#ifdef __sun
 #define LED_NUM		1
 #define	LED_SCROLL	2
 #define	LED_COMPOSE	3
@@ -505,6 +505,13 @@ XkbInitControls(DeviceIntPtr pXDev, XkbSrvInfoPtr xkbi)
     return Success;
 }
 
+static Status
+XkbInitOverlayState(XkbSrvInfoPtr xkbi)
+{
+    memset(xkbi->overlay_perkey_state, 0, sizeof(xkbi->overlay_perkey_state));
+    return Success;
+}
+
 static Bool
 InitKeyboardDeviceStructInternal(DeviceIntPtr dev, XkbRMLVOSet * rmlvo,
                                  const char *keymap, int keymap_length,
@@ -608,6 +615,8 @@ InitKeyboardDeviceStructInternal(DeviceIntPtr dev, XkbRMLVOSet * rmlvo,
 
     XkbInitIndicatorMap(xkbi);
 
+    XkbInitOverlayState(xkbi);
+
     XkbUpdateActions(dev, xkb->min_key_code, XkbNumKeys(xkb), &changes,
                      &check, &cause);
 
@@ -676,9 +685,9 @@ InitKeyboardDeviceStructFromString(DeviceIntPtr dev,
 /***====================================================================***/
 
         /*
-         * Be very careful about what does and doesn't get freed by this 
-         * function.  To reduce fragmentation, XkbInitDevice allocates a 
-         * single huge block per device and divides it up into most of the 
+         * Be very careful about what does and doesn't get freed by this
+         * function.  To reduce fragmentation, XkbInitDevice allocates a
+         * single huge block per device and divides it up into most of the
          * fixed-size structures for the device.   Don't free anything that
          * is part of this larger block.
          */
@@ -728,7 +737,7 @@ extern int XkbDfltRepeatInterval;
 extern unsigned short XkbDfltAccessXTimeout;
 extern unsigned int XkbDfltAccessXTimeoutMask;
 extern unsigned int XkbDfltAccessXFeedback;
-extern unsigned char XkbDfltAccessXOptions;
+extern unsigned short XkbDfltAccessXOptions;
 
 int
 XkbProcessArguments(int argc, char *argv[], int i)
@@ -789,7 +798,7 @@ XkbProcessArguments(int argc, char *argv[], int i)
                     j++;
                 }
                 if (((i + 1) < argc) && (isdigit(argv[i + 1][0]))) {
-                    XkbDfltAccessXOptions = (unsigned char)
+                    XkbDfltAccessXOptions = (unsigned short)
                         strtol(argv[++i], NULL, 16);
                     j++;
                 }

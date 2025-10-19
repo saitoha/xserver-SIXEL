@@ -26,13 +26,13 @@ Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
 
                         All Rights Reserved
 
-Permission to use, copy, modify, and distribute this software and its 
-documentation for any purpose and without fee is hereby granted, 
+Permission to use, copy, modify, and distribute this software and its
+documentation for any purpose and without fee is hereby granted,
 provided that the above copyright notice appear in all copies and that
-both that copyright notice and this permission notice appear in 
+both that copyright notice and this permission notice appear in
 supporting documentation, and that the name of Digital not be
 used in advertising or publicity pertaining to distribution of the
-software without specific, written prior permission.  
+software without specific, written prior permission.
 
 DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
 ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
@@ -101,7 +101,7 @@ Equipment Corporation.
  *	FreeAllResources, LookupIDByType, LookupIDByClass, GetXIDRange
  */
 
-/* 
+/*
  *      A resource ID is a 32 bit quantity, the upper 2 bits of which are
  *	off-limits for client-visible resources.  The next 8 bits are
  *      used as client ID, and the low 22 bits come from the client.
@@ -144,10 +144,7 @@ Equipment Corporation.
 #include "gcstruct.h"
 
 #ifdef XSERVER_DTRACE
-#include <sys/types.h>
-typedef const char *string;
-
-#include "Xserver-dtrace.h"
+#include "probes.h"
 
 #define TypeNameString(t) LookupResourceName(t)
 #endif
@@ -159,7 +156,7 @@ static void RebuildTable(int    /*client */
 
 #define INITBUCKETS 64
 #define INITHASHSIZE 6
-#define MAXHASHSIZE 11
+#define MAXHASHSIZE 16
 
 typedef struct _Resource {
     struct _Resource *next;
@@ -513,7 +510,7 @@ CreateNewResourceType(DeleteType deleteFunc, const char *name)
 
     if (next & lastResourceClass)
         return 0;
-    types = realloc(resourceTypes, (next + 1) * sizeof(*resourceTypes));
+    types = reallocarray(resourceTypes, next + 1, sizeof(*resourceTypes));
     if (!types)
         return 0;
 
@@ -524,8 +521,10 @@ CreateNewResourceType(DeleteType deleteFunc, const char *name)
     resourceTypes[next].findSubResFunc = DefaultFindSubRes;
     resourceTypes[next].errorValue = BadValue;
 
+#if X_REGISTRY_RESOURCE
     /* Called even if name is NULL, to remove any previous entry */
     RegisterResourceName(next, name);
+#endif
 
     return next;
 }
@@ -601,6 +600,29 @@ CreateNewResourceClass(void)
 
 static ClientResourceRec clientTable[MAXCLIENTS];
 
+static unsigned int
+ilog2(int val)
+{
+    int bits;
+
+    if (val <= 0)
+	return 0;
+    for (bits = 0; val != 0; bits++)
+	val >>= 1;
+    return bits - 1;
+}
+
+/*****************
+ * ResourceClientBits
+ *    Returns the client bit offset in the client + resources ID field
+ *****************/
+
+unsigned int
+ResourceClientBits(void)
+{
+    return (ilog2(LimitClients));
+}
+
 /*****************
  * InitClientResources
  *    When a new client is created, call this to allocate space
@@ -646,29 +668,14 @@ InitClientResources(ClientPtr client)
 int
 HashResourceID(XID id, int numBits)
 {
-    id &= RESOURCE_ID_MASK;
-    switch (numBits)
-    {
-        case 6:
-            return ((int)(0x03F & (id ^ (id>>6) ^ (id>>12))));
-        case 7:
-            return ((int)(0x07F & (id ^ (id>>7) ^ (id>>13))));
-        case 8:
-            return ((int)(0x0FF & (id ^ (id>>8) ^ (id>>16))));
-        case 9:
-            return ((int)(0x1FF & (id ^ (id>>9))));
-        case 10:
-            return ((int)(0x3FF & (id ^ (id>>10))));
-        case 11:
-            return ((int)(0x7FF & (id ^ (id>>11))));
-    }
-    if (numBits >= 11)
-        return ((int)(0x7FF & (id ^ (id>>11))));
-    else
-    {
-        assert(numBits >= 0);
-        return id & ~((~0) << numBits);
-    }
+    static XID mask;
+
+    if (!mask)
+        mask = RESOURCE_ID_MASK;
+    id &= mask;
+    if (numBits < 9)
+        return (id ^ (id >> numBits) ^ (id >> (numBits<<1))) & ~((~0) << numBits);
+    return (id ^ (id >> numBits)) & ~((~0) << numBits);
 }
 
 static XID
@@ -723,7 +730,7 @@ GetXIDRange(int client, Bool server, XID *minp, XID *maxp)
 
 /**
  *  GetXIDList is called by the XC-MISC extension's MiscGetXIDList function.
- *  This function tries to find count unused XIDs for the given client.  It 
+ *  This function tries to find count unused XIDs for the given client.  It
  *  puts the IDs in the array pids and returns the number found, which should
  *  almost always be the number requested.
  *
@@ -835,10 +842,10 @@ RebuildTable(int client)
      */
 
     j = 2 * clientTable[client].buckets;
-    tails = malloc(j * sizeof(ResourcePtr *));
+    tails =  xallocarray(j, sizeof(ResourcePtr *));
     if (!tails)
         return;
-    resources = malloc(j * sizeof(ResourcePtr));
+    resources =  xallocarray(j, sizeof(ResourcePtr));
     if (!resources) {
         free(tails);
         return;
@@ -884,7 +891,7 @@ FreeResource(XID id, RESTYPE skipDeleteFuncType)
     int *eltptr;
     int elements;
 
-    if (((cid = CLIENT_ID(id)) < MAXCLIENTS) && clientTable[cid].buckets) {
+    if (((cid = CLIENT_ID(id)) < LimitClients) && clientTable[cid].buckets) {
         head = &clientTable[cid].resources[HashResourceID(id, clientTable[cid].hashsize)];
         eltptr = &clientTable[cid].elements;
 
@@ -918,7 +925,7 @@ FreeResourceByType(XID id, RESTYPE type, Bool skipFree)
     ResourcePtr res;
     ResourcePtr *prev, *head;
 
-    if (((cid = CLIENT_ID(id)) < MAXCLIENTS) && clientTable[cid].buckets) {
+    if (((cid = CLIENT_ID(id)) < LimitClients) && clientTable[cid].buckets) {
         head = &clientTable[cid].resources[HashResourceID(id, clientTable[cid].hashsize)];
 
         prev = head;
@@ -953,7 +960,7 @@ ChangeResourceValue(XID id, RESTYPE rtype, void *value)
     int cid;
     ResourcePtr res;
 
-    if (((cid = CLIENT_ID(id)) < MAXCLIENTS) && clientTable[cid].buckets) {
+    if (((cid = CLIENT_ID(id)) < LimitClients) && clientTable[cid].buckets) {
         res = clientTable[cid].resources[HashResourceID(id, clientTable[cid].hashsize)];
 
         for (; res; res = res->next)
@@ -1116,8 +1123,8 @@ FreeClientResources(ClientPtr client)
     resources = clientTable[client->index].resources;
     for (j = 0; j < clientTable[client->index].buckets; j++) {
         /* It may seem silly to update the head of this resource list as
-           we delete the members, since the entire list will be deleted any way, 
-           but there are some resource deletion functions "FreeClientPixels" for 
+           we delete the members, since the entire list will be deleted any way,
+           but there are some resource deletion functions "FreeClientPixels" for
            one which do a LookupID on another resource id (a Colormap id in this
            case), so the resource list must be kept valid up to the point that
            it is deleted, so every time we delete a resource, we must update the
@@ -1191,18 +1198,20 @@ dixLookupResourceByType(void **result, XID id, RESTYPE rtype,
     if ((rtype & TypeMask) > lastResourceType)
         return BadImplementation;
 
-    if ((cid < MAXCLIENTS) && clientTable[cid].buckets) {
+    if ((cid < LimitClients) && clientTable[cid].buckets) {
         res = clientTable[cid].resources[HashResourceID(id, clientTable[cid].hashsize)];
 
         for (; res; res = res->next)
             if (res->id == id && res->type == rtype)
                 break;
     }
+    if (client) {
+        client->errorValue = id;
+    }
     if (!res)
         return resourceTypes[rtype & TypeMask].errorValue;
 
     if (client) {
-        client->errorValue = id;
         cid = XaceHook(XACE_RESOURCE_ACCESS, client, id, res->type,
                        res->value, RT_NONE, NULL, mode);
         if (cid == BadValue)
@@ -1224,18 +1233,20 @@ dixLookupResourceByClass(void **result, XID id, RESTYPE rclass,
 
     *result = NULL;
 
-    if ((cid < MAXCLIENTS) && clientTable[cid].buckets) {
+    if ((cid < LimitClients) && clientTable[cid].buckets) {
         res = clientTable[cid].resources[HashResourceID(id, clientTable[cid].hashsize)];
 
         for (; res; res = res->next)
             if (res->id == id && (res->type & rclass))
                 break;
     }
+    if (client) {
+        client->errorValue = id;
+    }
     if (!res)
         return BadValue;
 
     if (client) {
-        client->errorValue = id;
         cid = XaceHook(XACE_RESOURCE_ACCESS, client, id, res->type,
                        res->value, RT_NONE, NULL, mode);
         if (cid != Success)

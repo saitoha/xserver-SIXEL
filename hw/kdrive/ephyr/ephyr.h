@@ -1,8 +1,8 @@
 /*
  * Xephyr - A kdrive X server thats runs in a host X window.
  *          Authored by Matthew Allum <mallum@o-hand.com>
- * 
- * Copyright © 2004 Nokia 
+ *
+ * Copyright © 2004 Nokia
  *
  * Permission to use, copy, modify, distribute, and sell this software and its
  * documentation for any purpose is hereby granted without fee, provided that
@@ -27,7 +27,6 @@
 #define _EPHYR_H_
 #include <stdio.h>
 #include <unistd.h>
-#include <signal.h>
 #include <libgen.h>
 #include <xcb/xcb_image.h>
 
@@ -80,9 +79,13 @@ typedef struct _ephyrScrPriv {
     const char *output;         /* Set via -output option */
     unsigned char *fb_data;     /* only used when host bpp != server bpp */
     xcb_shm_segment_info_t shminfo;
+    size_t shmsize;
 
     KdScreenInfo *screen;
     int mynum;                  /* Screen number */
+    unsigned long cmap[256];
+
+    ScreenBlockHandlerProcPtr   BlockHandler;
 
     /**
      * Per-screen Xlib-using state for glamor (private to
@@ -167,9 +170,6 @@ Bool
 Bool
  ephyrCreateColormap(ColormapPtr pmap);
 
-void
- ephyrPoll(void);
-
 #ifdef RANDR
 Bool
  ephyrRandRGetInfo(ScreenPtr pScreen, Rotation * rotations);
@@ -193,11 +193,7 @@ extern KdPointerDriver EphyrMouseDriver;
 
 extern KdKeyboardDriver EphyrKeyboardDriver;
 
-extern KdOsFuncs EphyrOsFuncs;
-
 extern Bool ephyrCursorInit(ScreenPtr pScreen);
-
-extern void ephyrCursorEnable(ScreenPtr pScreen);
 
 extern int ephyrBufferHeight(KdScreenInfo * screen);
 

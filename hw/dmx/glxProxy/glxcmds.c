@@ -39,7 +39,6 @@
 #include "dmxsync.h"
 
 #include "glxserver.h"
-#include <GL/glxtokens.h>
 #include "g_disptab.h"
 #include <pixmapstr.h>
 #include <windowstr.h>
@@ -61,7 +60,6 @@
 extern __GLXFBConfig **__glXFBConfigs;
 extern int __glXNumFBConfigs;
 
-extern int glxIsExtensionSupported(char *ext);
 extern int __glXGetFBConfigsSGIX(__GLXclientState * cl, GLbyte * pc);
 
 #define BE_TO_CLIENT_ERROR(x) \
@@ -188,7 +186,7 @@ CreateContext(__GLXclientState * cl,
 #endif
 
     /*
-     ** Find the display list space that we want to share.  
+     ** Find the display list space that we want to share.
      **
      */
     if (shareList == None) {
@@ -285,11 +283,11 @@ CreateContext(__GLXclientState * cl,
      * allocate memory for back-end servers info
      */
     num_be_screens = to_screen - from_screen + 1;
-    glxc->real_ids = (XID *) malloc(sizeof(XID) * num_be_screens);
+    glxc->real_ids = xallocarray(num_be_screens, sizeof(XID));
     if (!glxc->real_ids) {
         return BadAlloc;
     }
-    glxc->real_vids = (XID *) malloc(sizeof(XID) * num_be_screens);
+    glxc->real_vids = xallocarray(num_be_screens, sizeof(XID));
     if (!glxc->real_vids) {
         return BadAlloc;
     }
@@ -686,22 +684,16 @@ AddCurrentContext(__GLXclientState * cl, __GLXcontext * glxc, DrawablePtr pDraw)
     if (!num) {
         table = (__GLXcontext **) malloc(sizeof(__GLXcontext *));
         cl->currentDrawables = (DrawablePtr *) malloc(sizeof(DrawablePtr));
-        cl->be_currentCTag =
-            (GLXContextTag *) malloc(screenInfo.numScreens *
-                                     sizeof(GLXContextTag));
+        cl->be_currentCTag = xallocarray(screenInfo.numScreens,
+                                         sizeof(GLXContextTag));
     }
     else {
-        table = (__GLXcontext **) realloc(table,
-                                          (num + 1) * sizeof(__GLXcontext *));
-        cl->currentDrawables = (DrawablePtr *) realloc(cl->currentDrawables,
-                                                       (num +
-                                                        1) *
-                                                       sizeof(DrawablePtr));
-        cl->be_currentCTag =
-            (GLXContextTag *) realloc(cl->be_currentCTag,
-                                      (num +
-                                       1) * screenInfo.numScreens *
-                                      sizeof(GLXContextTag));
+        table = reallocarray(table, num + 1, sizeof(__GLXcontext *));
+        cl->currentDrawables = reallocarray(cl->currentDrawables, num + 1,
+                                            sizeof(DrawablePtr));
+        cl->be_currentCTag = reallocarray(cl->be_currentCTag,
+                                          (num + 1) * screenInfo.numScreens,
+                                          sizeof(GLXContextTag));
     }
     table[num] = glxc;
     cl->currentDrawables[num] = pDraw;
@@ -1751,7 +1743,7 @@ __glXGetVisualConfigs(__GLXclientState * cl, GLbyte * pc)
         buf[p++] = pGlxVisual->stencilSize;
         buf[p++] = pGlxVisual->auxBuffers;
         buf[p++] = pGlxVisual->level;
-        /* 
+        /*
          ** Add token/value pairs for extensions.
          */
         buf[p++] = GLX_VISUAL_CAVEAT_EXT;
@@ -1897,7 +1889,7 @@ CreateGLXPixmap(__GLXclientState * cl,
     if (!pGlxPixmap) {
         return BadAlloc;
     }
-    pGlxPixmap->be_xids = (XID *) malloc(sizeof(XID) * screenInfo.numScreens);
+    pGlxPixmap->be_xids = xallocarray(screenInfo.numScreens, sizeof(XID));
     if (!pGlxPixmap->be_xids) {
         free(pGlxPixmap);
         return BadAlloc;
@@ -2017,11 +2009,8 @@ CreateGLXPixmap(__GLXclientState * cl,
         XFlush(dpy);
     }
 
-    if (!(AddResource(glxpixmapId, __glXPixmapRes, pGlxPixmap))) {
-        free(pGlxPixmap->be_xids);
-        free(pGlxPixmap);
+    if (!(AddResource(glxpixmapId, __glXPixmapRes, pGlxPixmap)))
         return BadAlloc;
-    }
 
     return Success;
 }
@@ -3087,7 +3076,7 @@ __glXCreateWindow(__GLXclientState * cl, GLbyte * pc)
     void *val;
 
     /*
-     ** Check if windowId is valid 
+     ** Check if windowId is valid
      */
     rc = dixLookupDrawable(&pDraw, windowId, client, M_DRAWABLE_WINDOW,
                            DixAddAccess);
@@ -3112,7 +3101,7 @@ __glXCreateWindow(__GLXclientState * cl, GLbyte * pc)
     visId = pGlxFBConfig->associatedVisualId;
 
     /*
-     ** Check if the fbconfig supports rendering to windows 
+     ** Check if the fbconfig supports rendering to windows
      */
     if (!(pGlxFBConfig->drawableType & GLX_WINDOW_BIT)) {
         return BadMatch;
@@ -3134,7 +3123,7 @@ __glXCreateWindow(__GLXclientState * cl, GLbyte * pc)
         }
 
         /*
-         ** Check if color buffer depth of fbconfig matches depth 
+         ** Check if color buffer depth of fbconfig matches depth
          ** of window.
          */
         if (pVisual->nplanes != pDraw->depth) {
@@ -3144,7 +3133,7 @@ __glXCreateWindow(__GLXclientState * cl, GLbyte * pc)
     else
         /*
          ** The window was created with no visual that corresponds
-         ** to fbconfig 
+         ** to fbconfig
          */
         return BadMatch;
 
@@ -3357,7 +3346,7 @@ __glXCreatePbuffer(__GLXclientState * cl, GLbyte * pc)
         return BadAlloc;
     }
 
-    pGlxPbuffer->be_xids = (XID *) malloc(sizeof(XID) * screenInfo.numScreens);
+    pGlxPbuffer->be_xids = xallocarray(screenInfo.numScreens, sizeof(XID));
     if (!pGlxPbuffer->be_xids) {
         free(pGlxPbuffer);
         return BadAlloc;
@@ -3394,11 +3383,11 @@ __glXCreatePbuffer(__GLXclientState * cl, GLbyte * pc)
 
         /* Send attributes */
         if (attr != NULL) {
-            CARD32 *pc = (CARD32 *) (be_req + 1);
+            CARD32 *pca = (CARD32 *) (be_req + 1);
 
             while (numAttribs-- > 0) {
-                *pc++ = *attr++;        /* token */
-                *pc++ = *attr++;        /* value */
+                *pca++ = *attr++;        /* token */
+                *pca++ = *attr++;        /* value */
             }
         }
 
@@ -3561,7 +3550,7 @@ __glXGetDrawableAttributes(__GLXclientState * cl, GLbyte * pc)
         return __glXBadDrawable;
     }
 
-    /* if the drawable is a window or GLXWindow - 
+    /* if the drawable is a window or GLXWindow -
      * we need to find the base id on the back-end server
      */
     if (!be_drawable) {
@@ -3618,13 +3607,13 @@ __glXGetDrawableAttributes(__GLXclientState * cl, GLbyte * pc)
     }
 
     if (reply.numAttribs) {
-        attribs_size = 2 * reply.numAttribs * __GLX_SIZE_CARD32;
-        attribs = (CARD32 *) malloc(attribs_size);
+        attribs = xallocarray(reply.numAttribs, 2 * __GLX_SIZE_CARD32);
         if (attribs == NULL) {
             UnlockDisplay(dpy);
             SyncHandle();
             return BadAlloc;
         }
+        attribs_size = 2 * reply.numAttribs * __GLX_SIZE_CARD32;
 
         _XRead(dpy, (char *) attribs, attribs_size);
     }
@@ -3723,7 +3712,7 @@ __glXChangeDrawableAttributes(__GLXclientState * cl, GLbyte * pc)
         return __glXBadDrawable;
     }
 
-    /* if the drawable is a window or GLXWindow - 
+    /* if the drawable is a window or GLXWindow -
      * we need to find the base id on the back-end server
      */
     if (!be_drawable) {

@@ -33,7 +33,7 @@
 					((dir < 0) ? FbStipLeft(mask,bpp) : \
 					 FbStipRight(mask,bpp)))
 
-void
+static void
 fbBresSolid(DrawablePtr pDrawable,
             GCPtr pGC,
             int dashOffset,
@@ -65,12 +65,6 @@ fbBresSolid(DrawablePtr pDrawable,
     if (axis == X_AXIS) {
         bits = 0;
         while (len--) {
-            if (e >= 0) {
-                WRITE(dst, FbDoMaskRRop (READ(dst), and, xor, bits));
-                bits = 0;
-                dst += dstStride;
-                e += e3;
-            }
             bits |= mask;
             mask = fbBresShiftMask(mask, signdx, dstBpp);
             if (!mask) {
@@ -80,12 +74,23 @@ fbBresSolid(DrawablePtr pDrawable,
                 mask = mask0;
             }
             e += e1;
+            if (e >= 0) {
+                if (bits) {
+                    WRITE(dst, FbDoMaskRRop (READ(dst), and, xor, bits));
+                    bits = 0;
+                }
+                dst += dstStride;
+                e += e3;
+            }
         }
         if (bits)
             WRITE(dst, FbDoMaskRRop(READ(dst), and, xor, bits));
     }
     else {
         while (len--) {
+            WRITE(dst, FbDoMaskRRop(READ(dst), and, xor, mask));
+            dst += dstStride;
+            e += e1;
             if (e >= 0) {
                 e += e3;
                 mask = fbBresShiftMask(mask, signdx, dstBpp);
@@ -94,16 +99,13 @@ fbBresSolid(DrawablePtr pDrawable,
                     mask = mask0;
                 }
             }
-            WRITE(dst, FbDoMaskRRop(READ(dst), and, xor, mask));
-            dst += dstStride;
-            e += e1;
         }
     }
 
     fbFinishAccess(pDrawable);
 }
 
-void
+static void
 fbBresDash(DrawablePtr pDrawable,
            GCPtr pGC,
            int dashOffset,
@@ -176,7 +178,7 @@ fbBresDash(DrawablePtr pDrawable,
     fbFinishAccess(pDrawable);
 }
 
-void
+static void
 fbBresFill(DrawablePtr pDrawable,
            GCPtr pGC,
            int dashOffset,
@@ -216,7 +218,7 @@ fbSetFg(DrawablePtr pDrawable, GCPtr pGC, Pixel fg)
     }
 }
 
-void
+static void
 fbBresFillDash(DrawablePtr pDrawable,
                GCPtr pGC,
                int dashOffset,
@@ -277,164 +279,13 @@ fbBresFillDash(DrawablePtr pDrawable,
         fbSetFg(pDrawable, pGC, fg);
 }
 
-static void
-fbBresSolid24RRop(DrawablePtr pDrawable,
-                  GCPtr pGC,
-                  int dashOffset,
-                  int signdx,
-                  int signdy,
-                  int axis, int x1, int y1, int e, int e1, int e3, int len)
-{
-    FbStip *dst;
-    FbStride dstStride;
-    int dstBpp;
-    int dstXoff, dstYoff;
-    FbGCPrivPtr pPriv = fbGetGCPrivate(pGC);
-    FbStip and = pPriv->and;
-    FbStip xor = pPriv->xor;
-    FbStip leftMask, rightMask;
-    int nl;
-    FbStip *d;
-    int x;
-    int rot;
-    FbStip andT, xorT;
-
-    fbGetStipDrawable(pDrawable, dst, dstStride, dstBpp, dstXoff, dstYoff);
-    dst += ((y1 + dstYoff) * dstStride);
-    x1 = (x1 + dstXoff) * 24;
-    if (signdy < 0)
-        dstStride = -dstStride;
-    signdx *= 24;
-    while (len--) {
-        d = dst + (x1 >> FB_STIP_SHIFT);
-        x = x1 & FB_STIP_MASK;
-        rot = FbFirst24Rot(x);
-        andT = FbRot24Stip(and, rot);
-        xorT = FbRot24Stip(xor, rot);
-        FbMaskStip(x, 24, leftMask, nl, rightMask);
-        if (leftMask) {
-            WRITE(d, FbDoMaskRRop(READ(d), andT, xorT, leftMask));
-            d++;
-            andT = FbNext24Stip(andT);
-            xorT = FbNext24Stip(xorT);
-        }
-        if (rightMask)
-            WRITE(d, FbDoMaskRRop(READ(d), andT, xorT, rightMask));
-        if (axis == X_AXIS) {
-            x1 += signdx;
-            e += e1;
-            if (e >= 0) {
-                e += e3;
-                dst += dstStride;
-            }
-        }
-        else {
-            dst += dstStride;
-            e += e1;
-            if (e >= 0) {
-                e += e3;
-                x1 += signdx;
-            }
-        }
-    }
-
-    fbFinishAccess(pDrawable);
-}
-
-static void
-fbBresDash24RRop(DrawablePtr pDrawable,
-                 GCPtr pGC,
-                 int dashOffset,
-                 int signdx,
-                 int signdy,
-                 int axis, int x1, int y1, int e, int e1, int e3, int len)
-{
-    FbStip *dst;
-    FbStride dstStride;
-    int dstBpp;
-    int dstXoff, dstYoff;
-    FbGCPrivPtr pPriv = fbGetGCPrivate(pGC);
-    FbStip andT, xorT;
-    FbStip fgand = pPriv->and;
-    FbStip fgxor = pPriv->xor;
-    FbStip bgand = pPriv->bgand;
-    FbStip bgxor = pPriv->bgxor;
-    FbStip leftMask, rightMask;
-    int nl;
-    FbStip *d;
-    int x;
-    int rot;
-
-    FbDashDeclare;
-    int dashlen;
-    Bool even;
-    Bool doOdd;
-
-    fbGetStipDrawable(pDrawable, dst, dstStride, dstBpp, dstXoff, dstYoff);
-    doOdd = pGC->lineStyle == LineDoubleDash;
-
-    /* compute current dash position */
-    FbDashInit(pGC, pPriv, dashOffset, dashlen, even);
-
-    dst += ((y1 + dstYoff) * dstStride);
-    x1 = (x1 + dstXoff) * 24;
-    if (signdy < 0)
-        dstStride = -dstStride;
-    signdx *= 24;
-    while (len--) {
-        if (even || doOdd) {
-            if (even) {
-                andT = fgand;
-                xorT = fgxor;
-            }
-            else {
-                andT = bgand;
-                xorT = bgxor;
-            }
-            d = dst + (x1 >> FB_STIP_SHIFT);
-            x = x1 & FB_STIP_MASK;
-            rot = FbFirst24Rot(x);
-            andT = FbRot24Stip(andT, rot);
-            xorT = FbRot24Stip(xorT, rot);
-            FbMaskStip(x, 24, leftMask, nl, rightMask);
-            if (leftMask) {
-                WRITE(d, FbDoMaskRRop(READ(d), andT, xorT, leftMask));
-                d++;
-                andT = FbNext24Stip(andT);
-                xorT = FbNext24Stip(xorT);
-            }
-            if (rightMask)
-                WRITE(d, FbDoMaskRRop(READ(d), andT, xorT, rightMask));
-        }
-        if (axis == X_AXIS) {
-            x1 += signdx;
-            e += e1;
-            if (e >= 0) {
-                e += e3;
-                dst += dstStride;
-            }
-        }
-        else {
-            dst += dstStride;
-            e += e1;
-            if (e >= 0) {
-                e += e3;
-                x1 += signdx;
-            }
-        }
-        FbDashStep(dashlen, even);
-    }
-
-    fbFinishAccess(pDrawable);
-}
-
 /*
  * For drivers that want to bail drawing some lines, this
  * function takes care of selecting the appropriate rasterizer
  * based on the contents of the specified GC.
  */
 
-FbBres *
+static FbBres *
 fbSelectBres(DrawablePtr pDrawable, GCPtr pGC)
 {
     FbGCPrivPtr pPriv = fbGetGCPrivate(pGC);
@@ -445,8 +296,6 @@ fbSelectBres(DrawablePtr pDrawable, GCPtr pGC)
         bres = fbBresFill;
         if (pGC->fillStyle == FillSolid) {
             bres = fbBresSolid;
-            if (dstBpp == 24)
-                bres = fbBresSolid24RRop;
             if (pPriv->and == 0) {
                 switch (dstBpp) {
                 case 8:
@@ -454,9 +303,6 @@ fbSelectBres(DrawablePtr pDrawable, GCPtr pGC)
                     break;
                 case 16:
                     bres = fbBresSolid16;
-                    break;
-                case 24:
-                    bres = fbBresSolid24;
                     break;
                 case 32:
                     bres = fbBresSolid32;
@@ -469,8 +315,6 @@ fbSelectBres(DrawablePtr pDrawable, GCPtr pGC)
         bres = fbBresFillDash;
         if (pGC->fillStyle == FillSolid) {
             bres = fbBresDash;
-            if (dstBpp == 24)
-                bres = fbBresDash24RRop;
             if (pPriv->and == 0 &&
                 (pGC->lineStyle == LineOnOffDash || pPriv->bgand == 0)) {
                 switch (dstBpp) {
@@ -480,9 +324,6 @@ fbSelectBres(DrawablePtr pDrawable, GCPtr pGC)
                 case 16:
                     bres = fbBresDash16;
                     break;
-                case 24:
-                    bres = fbBresDash24;
-                    break;
                 case 32:
                     bres = fbBresDash32;
                     break;
@@ -491,18 +332,6 @@ fbSelectBres(DrawablePtr pDrawable, GCPtr pGC)
         }
     }
     return bres;
-}
-
-void
-fbBres(DrawablePtr pDrawable,
-       GCPtr pGC,
-       int dashOffset,
-       int signdx,
-       int signdy, int axis, int x1, int y1, int e, int e1, int e3, int len)
-{
-    (*fbSelectBres(pDrawable, pGC)) (pDrawable, pGC, dashOffset,
-                                     signdx, signdy, axis, x1, y1,
-                                     e, e1, e3, len);
 }
 
 void

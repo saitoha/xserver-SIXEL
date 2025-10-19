@@ -23,10 +23,9 @@
 #ifndef _GLAMOR_TRANSFORM_H_
 #define _GLAMOR_TRANSFORM_H_
 
-void
+Bool
 glamor_set_destination_drawable(DrawablePtr     drawable,
-                                int             box_x,
-                                int             box_y,
+                                int             box_index,
                                 Bool            do_drawable_translate,
                                 Bool            center_offset,
                                 GLint           matrix_uniform_location,
@@ -34,13 +33,27 @@ glamor_set_destination_drawable(DrawablePtr     drawable,
                                 int             *p_off_y);
 
 void
+glamor_set_color_depth(ScreenPtr      pScreen,
+                       int            depth,
+                       CARD32         pixel,
+                       GLint          uniform);
+
+static inline void
 glamor_set_color(PixmapPtr      pixmap,
                  CARD32         pixel,
-                 GLint          uniform);
+                 GLint          uniform)
+{
+    glamor_set_color_depth(pixmap->drawable.pScreen,
+                           pixmap->drawable.depth, pixel, uniform);
+}
 
 Bool
-glamor_set_texture(PixmapPtr    pixmap,
-                   PixmapPtr    texture,
+glamor_set_texture_pixmap(PixmapPtr     texture,
+                          Bool          destination_red);
+
+Bool
+glamor_set_texture(PixmapPtr    texture,
+                   Bool         destination_red,
                    int          off_x,
                    int          off_y,
                    GLint        offset_uniform,

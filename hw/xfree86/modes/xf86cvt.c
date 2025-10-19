@@ -28,10 +28,6 @@
 
 #ifdef HAVE_XORG_CONFIG_H
 #include <xorg-config.h>
-#else
-#ifdef HAVE_CONFIG_H
-#include <config.h>
-#endif
 #endif
 
 #include "xf86.h"
@@ -54,7 +50,7 @@
  * likely though).
  *
  * About margins; i'm sure that they are to be the bit between HDisplay and
- * HBlankStart, HBlankEnd and HTotal, VDisplay and VBlankStart, VBlankEnd and 
+ * HBlankStart, HBlankEnd and HTotal, VDisplay and VBlankStart, VBlankEnd and
  * VTotal, where the overscan colour is shown. FB seems to call _all_ blanking
  * outside sync "margin" for some reason. Since we prefer seeing proper
  * blanking instead of the overscan colour, and since the Crtc* values will
@@ -154,7 +150,7 @@ xf86CVTMode(int HDisplay, int VDisplay, float VRefresh, Bool Reduced,
 
     if (!Reduced) {             /* simplified GTF calculation */
 
-        /* 4) Minimum time of vertical sync + back porch interval (µs) 
+        /* 4) Minimum time of vertical sync + back porch interval (µs)
          * default 550.0 */
 #define CVT_MIN_VSYNC_BP 550.0
 

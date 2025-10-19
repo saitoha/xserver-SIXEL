@@ -4,13 +4,13 @@ and the Massachusetts Institute of Technology, Cambridge, Massachusetts.
 
                         All Rights Reserved
 
-Permission to use, copy, modify, and distribute this software and its 
-documentation for any purpose and without fee is hereby granted, 
+Permission to use, copy, modify, and distribute this software and its
+documentation for any purpose and without fee is hereby granted,
 provided that the above copyright notice appear in all copies and that
-both that copyright notice and this permission notice appear in 
+both that copyright notice and this permission notice appear in
 supporting documentation, and that the names of Digital or MIT not be
 used in advertising or publicity pertaining to distribution of the
-software without specific, written prior permission.  
+software without specific, written prior permission.
 
 DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
 ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
@@ -23,11 +23,11 @@ SOFTWARE.
 ******************************************************************/
 
 /*
-** File: 
+** File:
 **
 **   xvmain.c --- Xv server extension main device independent module.
-**   
-** Author: 
+**
+** Author:
 **
 **   David Carver (Digital Workstation Engineering/Project Athena)
 **
@@ -58,7 +58,7 @@ SOFTWARE.
 **
 **   24.01.91 Carver
 **     - version 1.4 upgrade
-**       
+**
 ** Notes:
 **
 **   Port structures reference client structures in a two different
@@ -86,7 +86,7 @@ SOFTWARE.
 #include "scrnintstr.h"
 #include "windowstr.h"
 #include "pixmapstr.h"
-#include "gc.h"
+#include "gcstruct.h"
 #include "extnsionst.h"
 #include "extinit.h"
 #include "dixstruct.h"
@@ -327,36 +327,24 @@ XvGetRTPort(void)
     return XvRTPort;
 }
 
-static Bool
-XvDestroyPixmap(PixmapPtr pPix)
+static void
+XvStopAdaptors(DrawablePtr pDrawable)
 {
-    Bool status;
-    ScreenPtr pScreen;
-    XvScreenPtr pxvs;
-    XvAdaptorPtr pa;
-    int na;
-    XvPortPtr pp;
-    int np;
-
-    pScreen = pPix->drawable.pScreen;
-
-    SCREEN_PROLOGUE(pScreen, DestroyPixmap);
-
-    pxvs = (XvScreenPtr) dixLookupPrivate(&pScreen->devPrivates, XvScreenKey);
+    ScreenPtr pScreen = pDrawable->pScreen;
+    XvScreenPtr pxvs = dixLookupPrivate(&pScreen->devPrivates, XvScreenKey);
+    XvAdaptorPtr pa = pxvs->pAdaptors;
+    int na = pxvs->nAdaptors;
 
     /* CHECK TO SEE IF THIS PORT IS IN USE */
-
-    pa = pxvs->pAdaptors;
-    na = pxvs->nAdaptors;
     while (na--) {
-        np = pa->nPorts;
-        pp = pa->pPorts;
+        XvPortPtr pp = pa->pPorts;
+        int np = pa->nPorts;
 
         while (np--) {
-            if (pp->pDraw == (DrawablePtr) pPix) {
-                XvdiSendVideoNotify(pp, pp->pDraw, XvPreempted);
+            if (pp->pDraw == pDrawable) {
+                XvdiSendVideoNotify(pp, pDrawable, XvPreempted);
 
-                (void) (*pp->pAdaptor->ddStopVideo) (pp, pp->pDraw);
+                (void) (*pp->pAdaptor->ddStopVideo) (pp, pDrawable);
 
                 pp->pDraw = NULL;
                 pp->client = NULL;
@@ -366,9 +354,19 @@ XvDestroyPixmap(PixmapPtr pPix)
         }
         pa++;
     }
+}
 
+static Bool
+XvDestroyPixmap(PixmapPtr pPix)
+{
+    ScreenPtr pScreen = pPix->drawable.pScreen;
+    Bool status;
+
+    if (pPix->refcnt == 1)
+        XvStopAdaptors(&pPix->drawable);
+
+    SCREEN_PROLOGUE(pScreen, DestroyPixmap);
     status = (*pScreen->DestroyPixmap) (pPix);
-
     SCREEN_EPILOGUE(pScreen, DestroyPixmap, XvDestroyPixmap);
 
     return status;
@@ -378,45 +376,13 @@ XvDestroyPixmap(PixmapPtr pPix)
 static Bool
 XvDestroyWindow(WindowPtr pWin)
 {
+    ScreenPtr pScreen = pWin->drawable.pScreen;
     Bool status;
-    ScreenPtr pScreen;
-    XvScreenPtr pxvs;
-    XvAdaptorPtr pa;
-    int na;
-    XvPortPtr pp;
-    int np;
 
-    pScreen = pWin->drawable.pScreen;
+    XvStopAdaptors(&pWin->drawable);
 
     SCREEN_PROLOGUE(pScreen, DestroyWindow);
-
-    pxvs = (XvScreenPtr) dixLookupPrivate(&pScreen->devPrivates, XvScreenKey);
-
-    /* CHECK TO SEE IF THIS PORT IS IN USE */
-
-    pa = pxvs->pAdaptors;
-    na = pxvs->nAdaptors;
-    while (na--) {
-        np = pa->nPorts;
-        pp = pa->pPorts;
-
-        while (np--) {
-            if (pp->pDraw == (DrawablePtr) pWin) {
-                XvdiSendVideoNotify(pp, pp->pDraw, XvPreempted);
-
-                (void) (*pp->pAdaptor->ddStopVideo) (pp, pp->pDraw);
-
-                pp->pDraw = NULL;
-                pp->client = NULL;
-                pp->time = currentTime;
-            }
-            pp++;
-        }
-        pa++;
-    }
-
     status = (*pScreen->DestroyWindow) (pWin);
-
     SCREEN_EPILOGUE(pScreen, DestroyWindow, XvDestroyWindow);
 
     return status;
@@ -834,10 +800,9 @@ XvdiSelectVideoNotify(ClientPtr client, DrawablePtr pDraw, BOOL onoff)
         if (!(tpn = malloc(sizeof(XvVideoNotifyRec))))
             return BadAlloc;
         tpn->next = NULL;
-        if (!AddResource(pDraw->id, XvRTVideoNotifyList, tpn)) {
-            free(tpn);
+        tpn->client = NULL;
+        if (!AddResource(pDraw->id, XvRTVideoNotifyList, tpn))
             return BadAlloc;
-        }
     }
     else {
         /* LOOK TO SEE IF ENTRY ALREADY EXISTS */
@@ -878,7 +843,8 @@ XvdiSelectVideoNotify(ClientPtr client, DrawablePtr pDraw, BOOL onoff)
 
     tpn->client = NULL;
     tpn->id = FakeClientID(client->index);
-    AddResource(tpn->id, XvRTVideoNotify, tpn);
+    if (!AddResource(tpn->id, XvRTVideoNotify, tpn))
+        return BadAlloc;
 
     tpn->client = client;
     return Success;
@@ -915,7 +881,7 @@ XvdiSelectPortNotify(ClientPtr client, XvPortPtr pPort, BOOL onoff)
         return Success;
     }
 
-    /* DIDN'T FIND IT; SO REUSE LIST ELEMENT IF ONE IS FREE OTHERWISE 
+    /* DIDN'T FIND IT; SO REUSE LIST ELEMENT IF ONE IS FREE OTHERWISE
        CREATE A NEW ONE AND ADD IT TO THE BEGINNING OF THE LIST */
 
     if (!tpn) {
@@ -927,7 +893,8 @@ XvdiSelectPortNotify(ClientPtr client, XvPortPtr pPort, BOOL onoff)
 
     tpn->client = client;
     tpn->id = FakeClientID(client->index);
-    AddResource(tpn->id, XvRTPortNotify, tpn);
+    if (!AddResource(tpn->id, XvRTPortNotify, tpn))
+        return BadAlloc;
 
     return Success;
 
@@ -1017,7 +984,7 @@ XvdiGetPortAttribute(ClientPtr client,
 
 }
 
-static void
+static void _X_COLD
 WriteSwappedVideoNotifyEvent(xvEvent * from, xvEvent * to)
 {
 
@@ -1031,7 +998,7 @@ WriteSwappedVideoNotifyEvent(xvEvent * from, xvEvent * to)
 
 }
 
-static void
+static void _X_COLD
 WriteSwappedPortNotifyEvent(xvEvent * from, xvEvent * to)
 {
 
@@ -1102,7 +1069,7 @@ XvFillColorKey(DrawablePtr pDraw, CARD32 key, RegionPtr region)
     (void) ChangeGC(NullClient, gc, GCForeground | GCSubwindowMode, pval);
     ValidateGC(pDraw, gc);
 
-    rects = malloc(nbox * sizeof(xRectangle));
+    rects = xallocarray(nbox, sizeof(xRectangle));
     if (rects) {
         for (i = 0; i < nbox; i++, pbox++) {
             rects[i].x = pbox->x1 - pDraw->x;

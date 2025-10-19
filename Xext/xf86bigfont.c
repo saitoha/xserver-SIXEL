@@ -40,13 +40,6 @@
 
 #include <sys/types.h>
 #ifdef HAS_SHM
-#if defined(linux) && (!defined(__GNU_LIBRARY__) || __GNU_LIBRARY__ < 2)
-/* libc4 does not define __GNU_LIBRARY__, libc5 defines __GNU_LIBRARY__ as 1 */
-/* Linux libc4 and libc5 only (because glibc doesn't include kernel headers):
-   Linux 2.0.x and 2.2.x define SHMLBA as PAGE_SIZE, but forget to define
-   PAGE_SIZE. It is defined in <asm/page.h>. */
-#include <asm/page.h>
-#endif
 #ifdef SVR4
 #include <sys/sysmacros.h>
 #endif
@@ -96,8 +89,6 @@ static Bool badSysCall = FALSE;
 
 #if defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) || defined(__CYGWIN__) || defined(__DragonFly__)
 
-#include <sys/signal.h>
-
 static void
 SigSysHandler(int signo)
 {
@@ -111,7 +102,7 @@ CheckForShmSyscall(void)
     int shmid = -1;
 
     /* If no SHM support in the kernel, the bad syscall will generate SIGSYS */
-    oldHandler = signal(SIGSYS, SigSysHandler);
+    oldHandler = OsSignal(SIGSYS, SigSysHandler);
 
     badSysCall = FALSE;
     shmid = shmget(IPC_PRIVATE, 4096, IPC_CREAT);
@@ -123,7 +114,7 @@ CheckForShmSyscall(void)
         /* Allocation failed */
         badSysCall = TRUE;
     }
-    signal(SIGSYS, oldHandler);
+    OsSignal(SIGSYS, oldHandler);
     return !badSysCall;
 }
 
@@ -401,7 +392,7 @@ ProcXF86BigfontQueryFont(ClientPtr client)
             }
             else {
 #endif
-                pCI = malloc(nCharInfos * sizeof(xCharInfo));
+                pCI = xallocarray(nCharInfos, sizeof(xCharInfo));
                 if (!pCI)
                     return BadAlloc;
 #ifdef HAS_SHM
@@ -439,7 +430,7 @@ ProcXF86BigfontQueryFont(ClientPtr client)
 #ifdef HAS_SHM
             if (pDesc && !badSysCall) {
                 *(CARD32 *) (pCI + nCharInfos) = signature;
-                if (!FontSetPrivate(pFont, FontShmdescIndex, pDesc)) {
+                if (!xfont2_font_set_private(pFont, FontShmdescIndex, pDesc)) {
                     shmdealloc(pDesc);
                     return BadAlloc;
                 }
@@ -463,7 +454,7 @@ ProcXF86BigfontQueryFont(ClientPtr client)
             if (hashModulus > nCharInfos + 1)
                 hashModulus = nCharInfos + 1;
 
-            tmp = malloc((4 * nCharInfos + 1) * sizeof(CARD16));
+            tmp = xallocarray(4 * nCharInfos + 1, sizeof(CARD16));
             if (!tmp) {
                 if (!pDesc)
                     free(pCI);
@@ -659,7 +650,7 @@ ProcXF86BigfontDispatch(ClientPtr client)
     }
 }
 
-static int
+static int _X_COLD
 SProcXF86BigfontQueryVersion(ClientPtr client)
 {
     REQUEST(xXF86BigfontQueryVersionReq);
@@ -668,7 +659,7 @@ SProcXF86BigfontQueryVersion(ClientPtr client)
     return ProcXF86BigfontQueryVersion(client);
 }
 
-static int
+static int _X_COLD
 SProcXF86BigfontQueryFont(ClientPtr client)
 {
     REQUEST(xXF86BigfontQueryFontReq);
@@ -679,7 +670,7 @@ SProcXF86BigfontQueryFont(ClientPtr client)
     return ProcXF86BigfontQueryFont(client);
 }
 
-static int
+static int _X_COLD
 SProcXF86BigfontDispatch(ClientPtr client)
 {
     REQUEST(xReq);
@@ -723,7 +714,7 @@ XFree86BigfontExtensionInit(void)
             + (unsigned int) (65536.0 / (RAND_MAX + 1.0) * rand());
         /* fprintf(stderr, "signature = 0x%08X\n", signature); */
 
-        FontShmdescIndex = AllocateFontPrivateIndex();
+        FontShmdescIndex = xfont2_allocate_font_private_index();
 
 #if !defined(CSRG_BASED) && !defined(__CYGWIN__)
         pagesize = SHMLBA;

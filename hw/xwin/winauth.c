@@ -38,6 +38,16 @@
 #include "securitysrv.h"
 #include "os/osdep.h"
 
+#include <xcb/xcb.h>
+
+/* Need to get this from Xlib.h */
+extern void XSetAuthorization(
+    const char *                /* name */,
+    int                         /* namelen */,
+    const char *                /* data */,
+    int                         /* datalen */
+);
+
 /*
  * Constants
  */
@@ -51,48 +61,13 @@
 static XID g_authId = 0;
 static unsigned int g_uiAuthDataLen = 0;
 static char *g_pAuthData = NULL;
+static xcb_auth_info_t auth_info;
 
 /*
  * Code to generate a MIT-MAGIC-COOKIE-1, copied from under XCSECURITY
  */
 
 #ifndef XCSECURITY
-void
-GenerateRandomData(int len, char *buf)
-{
-    int fd;
-
-    fd = open("/dev/urandom", O_RDONLY);
-    read(fd, buf, len);
-    close(fd);
-}
-
-static char cookie[16];         /* 128 bits */
-
-XID
-MitGenerateCookie(unsigned data_length,
-                  const char *data,
-                  XID id, unsigned *data_length_return, char **data_return)
-{
-    int i = 0;
-    int status;
-
-    while (data_length--) {
-        cookie[i++] += *data++;
-        if (i >= sizeof(cookie))
-            i = 0;
-    }
-    GenerateRandomData(sizeof(cookie), cookie);
-    status = MitAddCookie(sizeof(cookie), cookie, id);
-    if (!status) {
-        id = -1;
-    }
-    else {
-        *data_return = cookie;
-        *data_length_return = sizeof(cookie);
-    }
-    return id;
-}
 
 static
     XID
@@ -114,7 +89,6 @@ GenerateAuthorization(unsigned name_length,
 Bool
 winGenerateAuthorization(void)
 {
-    Bool fFreeAuth = FALSE;
     SecurityAuthorizationPtr pAuth = NULL;
 
     /* Call OS layer to generate authorization key */
@@ -123,7 +97,7 @@ winGenerateAuthorization(void)
                                      0, NULL, &g_uiAuthDataLen, &g_pAuthData);
     if ((XID) ~0L == g_authId) {
         ErrorF("winGenerateAuthorization - GenerateAuthorization failed\n");
-        goto auth_bailout;
+        return FALSE;
     }
 
     else {
@@ -132,6 +106,11 @@ winGenerateAuthorization(void)
                  g_uiAuthDataLen, g_pAuthData);
     }
 
+    auth_info.name = AUTH_NAME;
+    auth_info.namelen = strlen(AUTH_NAME);
+    auth_info.data = g_pAuthData;
+    auth_info.datalen = g_uiAuthDataLen;
+
 #ifdef XCSECURITY
     /* Allocate structure for additional auth information */
     pAuth = (SecurityAuthorizationPtr)
@@ -139,7 +118,7 @@ winGenerateAuthorization(void)
     if (!(pAuth)) {
         ErrorF("winGenerateAuthorization - Failed allocating "
                "SecurityAuthorizationPtr.\n");
-        goto auth_bailout;
+        return FALSE;
     }
 
     /* Fill in the auth fields */
@@ -155,21 +134,11 @@ winGenerateAuthorization(void)
     /* Add the authorization to the server's auth list */
     if (!AddResource(g_authId, SecurityAuthorizationResType, pAuth)) {
         ErrorF("winGenerateAuthorization - AddResource failed for auth.\n");
-        fFreeAuth = TRUE;
-        goto auth_bailout;
+        return FALSE;
     }
-
-    /* Don't free the auth data, since it is still used internally */
-    pAuth = NULL;
 #endif
 
     return TRUE;
-
- auth_bailout:
-    if (fFreeAuth)
-        free(pAuth);
-
-    return FALSE;
 }
 
 /* Use our generated cookie for authentication */
@@ -178,4 +147,13 @@ winSetAuthorization(void)
 {
     XSetAuthorization(AUTH_NAME,
                       strlen(AUTH_NAME), g_pAuthData, g_uiAuthDataLen);
+}
+
+xcb_auth_info_t *
+winGetXcbAuthInfo(void)
+{
+    if (g_pAuthData)
+        return &auth_info;
+
+    return NULL;
 }

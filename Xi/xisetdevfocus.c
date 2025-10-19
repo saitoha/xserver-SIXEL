@@ -40,10 +40,12 @@
 #include "exglobals.h"          /* BadDevice */
 #include "xisetdevfocus.h"
 
-int
+int _X_COLD
 SProcXISetFocus(ClientPtr client)
 {
     REQUEST(xXISetFocusReq);
+    REQUEST_AT_LEAST_SIZE(xXISetFocusReq);
+
     swaps(&stuff->length);
     swaps(&stuff->deviceid);
     swapl(&stuff->focus);
@@ -52,10 +54,12 @@ SProcXISetFocus(ClientPtr client)
     return ProcXISetFocus(client);
 }
 
-int
+int _X_COLD
 SProcXIGetFocus(ClientPtr client)
 {
     REQUEST(xXIGetFocusReq);
+    REQUEST_AT_LEAST_SIZE(xXIGetFocusReq);
+
     swaps(&stuff->length);
     swaps(&stuff->deviceid);
 

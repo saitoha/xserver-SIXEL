@@ -26,13 +26,13 @@ Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
 
                         All Rights Reserved
 
-Permission to use, copy, modify, and distribute this software and its 
-documentation for any purpose and without fee is hereby granted, 
+Permission to use, copy, modify, and distribute this software and its
+documentation for any purpose and without fee is hereby granted,
 provided that the above copyright notice appear in all copies and that
-both that copyright notice and this permission notice appear in 
+both that copyright notice and this permission notice appear in
 supporting documentation, and that the name of Digital not be
 used in advertising or publicity pertaining to distribution of the
-software without specific, written prior permission.  
+software without specific, written prior permission.
 
 DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
 ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
@@ -229,15 +229,7 @@ extern _X_EXPORT RegionPtr miHandleExposures(DrawablePtr /*pSrcDrawable */ ,
                                              int /*width */ ,
                                              int /*height */ ,
                                              int /*dstx */ ,
-                                             int /*dsty */ ,
-                                             unsigned long      /*plane */
-    );
-
-extern _X_EXPORT void miSendGraphicsExpose(ClientPtr /*client */ ,
-                                           RegionPtr /*pRgn */ ,
-                                           XID /*drawable */ ,
-                                           int /*major */ ,
-                                           int  /*minor */
+                                             int /*dsty */
     );
 
 extern _X_EXPORT void miSendExposures(WindowPtr /*pWin */ ,
@@ -247,9 +239,7 @@ extern _X_EXPORT void miSendExposures(WindowPtr /*pWin */ ,
     );
 
 extern _X_EXPORT void miWindowExposures(WindowPtr /*pWin */ ,
-                                        RegionPtr /*prgn */ ,
-                                        RegionPtr       /*other_exposed */
-    );
+                                        RegionPtr /*prgn */);
 
 extern _X_EXPORT void miPaintWindow(WindowPtr /*pWin */ ,
                                     RegionPtr /*prgn */ ,
@@ -296,22 +286,6 @@ extern _X_EXPORT void miFillPolygon(DrawablePtr /*dst */ ,
                                     int /*mode */ ,
                                     int /*count */ ,
                                     DDXPointPtr /*pPts */
-    );
-
-/* mipolycon.c */
-
-extern _X_EXPORT Bool miFillConvexPoly(DrawablePtr /*dst */ ,
-                                       GCPtr /*pgc */ ,
-                                       int /*count */ ,
-                                       DDXPointPtr      /*ptsIn */
-    );
-
-/* mipolygen.c */
-
-extern _X_EXPORT Bool miFillGeneralPoly(DrawablePtr /*dst */ ,
-                                        GCPtr /*pgc */ ,
-                                        int /*count */ ,
-                                        DDXPointPtr     /*ptsIn */
     );
 
 /* mipolypnt.c */
@@ -386,6 +360,10 @@ extern _X_EXPORT void miPushPixels(GCPtr /*pGC */ ,
 
 /* miscrinit.c */
 
+extern _X_EXPORT void
+miSourceValidate(DrawablePtr pDrawable, int x, int y, int w, int h,
+                 unsigned int subWindowMode);
+
 extern _X_EXPORT Bool miModifyPixmapHeader(PixmapPtr pPixmap,
                                            int width,
                                            int height,
@@ -426,17 +404,6 @@ extern _X_EXPORT int miShapedWindowIn(RegionPtr /*universe */ ,
                                       int /*x */ ,
                                       int       /*y */
     );
-
-typedef void
- (*SetRedirectBorderClipProcPtr) (WindowPtr pWindow, RegionPtr pRegion);
-
-typedef RegionPtr
- (*GetRedirectBorderClipProcPtr) (WindowPtr pWindow);
-
-extern _X_EXPORT void
-
-miRegisterRedirectBorderClipProc(SetRedirectBorderClipProcPtr setBorderClip,
-                                 GetRedirectBorderClipProcPtr getBorderClip);
 
 extern _X_EXPORT int miValidateTree(WindowPtr /*pParent */ ,
                                     WindowPtr /*pChild */ ,
@@ -491,12 +458,12 @@ extern _X_EXPORT void miMoveWindow(WindowPtr /*pWin */ ,
                                    VTKind       /*kind */
     );
 
-extern _X_EXPORT void miSlideAndSizeWindow(WindowPtr /*pWin */ ,
-                                           int /*x */ ,
-                                           int /*y */ ,
-                                           unsigned int /*w */ ,
-                                           unsigned int /*h */ ,
-                                           WindowPtr    /*pSib */
+extern _X_EXPORT void miResizeWindow(WindowPtr /*pWin */ ,
+                                     int /*x */ ,
+                                     int /*y */ ,
+                                     unsigned int /*w */ ,
+                                     unsigned int /*h */ ,
+                                     WindowPtr    /*pSib */
     );
 
 extern _X_EXPORT WindowPtr miGetLayerWindow(WindowPtr   /*pWin */

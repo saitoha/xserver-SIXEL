@@ -21,7 +21,7 @@
  *
  * Authors:  Alan Hourihane, <alanh@fairlite.demon.co.uk>
  *
- * Modified from IBM.c to support TI RAMDAC routines 
+ * Modified from IBM.c to support TI RAMDAC routines
  *   by Jens Owen, <jens@tungstengraphics.com>.
  */
 
@@ -114,7 +114,7 @@ TIramdacCalculateMNPForClock(unsigned long RefClock,    /* In 100Hz units */
     VCO = 8.0 * IntRef * best_m / best_n;
     ActualClock = VCO / (1 << p);
 
-    DebugF("f_out=%ld f_vco=%.1f n=%d m=%d p=%d\n",
+    DebugF("f_out=%ld f_vco=%.1f n=%lu m=%lu p=%lu\n",
            ActualClock, VCO, *rN, *rM, *rP);
 
     return ActualClock;

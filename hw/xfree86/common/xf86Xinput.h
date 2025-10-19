@@ -1,6 +1,6 @@
 /*
  * Copyright 1995-1999 by Frederic Lepied, France. <Lepied@XFree86.org>
- *                                                                            
+ *
  * Permission to use, copy, modify, distribute, and sell this software and its
  * documentation for any purpose is  hereby granted without fee, provided that
  * the  above copyright   notice appear  in   all  copies and  that both  that
@@ -9,8 +9,8 @@
  * advertising or publicity pertaining to distribution of the software without
  * specific,  written      prior  permission.     Frederic  Lepied   makes  no
  * representations about the suitability of this software for any purpose.  It
- * is provided "as is" without express or implied warranty.                   
- *                                                                            
+ * is provided "as is" without express or implied warranty.
+ *
  * FREDERIC  LEPIED DISCLAIMS ALL   WARRANTIES WITH REGARD  TO  THIS SOFTWARE,
  * INCLUDING ALL IMPLIED   WARRANTIES OF MERCHANTABILITY  AND   FITNESS, IN NO
  * EVENT  SHALL FREDERIC  LEPIED BE   LIABLE   FOR ANY  SPECIAL, INDIRECT   OR
@@ -148,18 +148,11 @@ extern _X_EXPORT void xf86PostButtonEventM(DeviceIntPtr device, int is_absolute,
                                            int button, int is_down,
                                            const ValuatorMask *mask);
 extern _X_EXPORT void xf86PostKeyEvent(DeviceIntPtr device,
-                                       unsigned int key_code, int is_down,
-                                       int is_absolute, int first_valuator,
-                                       int num_valuators, ...);
+                                       unsigned int key_code, int is_down);
 extern _X_EXPORT void xf86PostKeyEventM(DeviceIntPtr device,
-                                        unsigned int key_code, int is_down,
-                                        int is_absolute,
-                                        const ValuatorMask *mask);
+                                        unsigned int key_code, int is_down);
 extern _X_EXPORT void xf86PostKeyEventP(DeviceIntPtr device,
-                                        unsigned int key_code, int is_down,
-                                        int is_absolute, int first_valuator,
-                                        int num_valuators,
-                                        const int *valuators);
+                                        unsigned int key_code, int is_down);
 extern _X_EXPORT void xf86PostKeyboardEvent(DeviceIntPtr device,
                                             unsigned int key_code, int is_down);
 extern _X_EXPORT void xf86PostTouchEvent(DeviceIntPtr dev, uint32_t touchid,

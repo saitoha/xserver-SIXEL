@@ -26,13 +26,13 @@ Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
 
                         All Rights Reserved
 
-Permission to use, copy, modify, and distribute this software and its 
-documentation for any purpose and without fee is hereby granted, 
+Permission to use, copy, modify, and distribute this software and its
+documentation for any purpose and without fee is hereby granted,
 provided that the above copyright notice appear in all copies and that
-both that copyright notice and this permission notice appear in 
+both that copyright notice and this permission notice appear in
 supporting documentation, and that the name of Digital not be
 used in advertising or publicity pertaining to distribution of the
-software without specific, written prior permission.  
+software without specific, written prior permission.
 
 DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
 ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
@@ -63,6 +63,22 @@ SOFTWARE.
 #include "mifillarc.h"
 #include <X11/Xfuncproto.h>
 
+#define EPSILON	0.000001
+#define ISEQUAL(a,b) (fabs((a) - (b)) <= EPSILON)
+#define UNEQUAL(a,b) (fabs((a) - (b)) > EPSILON)
+#define PTISEQUAL(a,b) (ISEQUAL(a.x,b.x) && ISEQUAL(a.y,b.y))
+#define SQSECANT 108.856472512142   /* 1/sin^2(11/2) - for 11o miter cutoff */
+
+/* Point with sub-pixel positioning. */
+typedef struct _SppPoint {
+    double x, y;
+} SppPointRec, *SppPointPtr;
+
+typedef struct _SppArc {
+    double x, y, width, height;
+    double angle1, angle2;
+} SppArcRec, *SppArcPtr;
+
 static double miDsin(double a);
 static double miDcos(double a);
 static double miDasin(double v);
@@ -82,7 +98,7 @@ cbrt(double x)
 /*
  * some interesting sematic interpretation of the protocol:
  *
- * Self intersecting arcs (i.e. those spanning 360 degrees) 
+ * Self intersecting arcs (i.e. those spanning 360 degrees)
  *  never join with other arcs, and are drawn without caps
  *  (unless on/off dashed, in which case each dash segment
  *  is capped, except when the last segment meets the
@@ -98,21 +114,6 @@ cbrt(double x)
  *  code works and should be "fixed".
  *
  */
-
-#undef max
-#undef min
-
-_X_INLINE static int
-max(const int x, const int y)
-{
-    return x > y ? x : y;
-}
-
-_X_INLINE static int
-min(const int x, const int y)
-{
-    return x < y ? x : y;
-}
 
 struct bound {
     double min, max;
@@ -214,10 +215,21 @@ typedef struct _miPolyArc {
     miArcJoinPtr joins;
 } miPolyArcRec, *miPolyArcPtr;
 
+typedef struct {
+    short lx, lw, rx, rw;
+} miArcSpan;
+
+typedef struct {
+    miArcSpan *spans;
+    int count1, count2, k;
+    char top, bot, hole;
+} miArcSpanData;
+
 static void fillSpans(DrawablePtr pDrawable, GCPtr pGC);
 static void newFinalSpan(int y, int xmin, int xmax);
-static void drawArc(xArc * tarc, int l, int a0, int a1, miArcFacePtr right,
-                    miArcFacePtr left);
+static miArcSpanData *drawArc(xArc * tarc, int l, int a0, int a1,
+                              miArcFacePtr right, miArcFacePtr left,
+                              miArcSpanData *spdata);
 static void drawZeroArc(DrawablePtr pDraw, GCPtr pGC, xArc * tarc, int lw,
                         miArcFacePtr left, miArcFacePtr right);
 static void miArcJoin(DrawablePtr pDraw, GCPtr pGC, miArcFacePtr pLeft,
@@ -243,9 +255,9 @@ static int miGetArcPts(SppArcPtr parc, int cpt, SppPointPtr * ppPts);
  * draw one segment of the arc using the arc spans generation routines
  */
 
-static void
-miArcSegment(DrawablePtr pDraw,
-             GCPtr pGC, xArc tarc, miArcFacePtr right, miArcFacePtr left)
+static miArcSpanData *
+miArcSegment(DrawablePtr pDraw, GCPtr pGC, xArc tarc, miArcFacePtr right,
+             miArcFacePtr left, miArcSpanData *spdata)
 {
     int l = pGC->lineWidth;
     int a0, a1, startAngle, endAngle;
@@ -256,7 +268,7 @@ miArcSegment(DrawablePtr pDraw,
 
     if (tarc.width == 0 || tarc.height == 0) {
         drawZeroArc(pDraw, pGC, &tarc, l, left, right);
-        return;
+        return spdata;
     }
 
     if (pGC->miTranslate) {
@@ -297,7 +309,7 @@ miArcSegment(DrawablePtr pDraw,
         endAngle = FULLCIRCLE;
     }
 
-    drawArc(&tarc, l, startAngle, endAngle, right, left);
+    return drawArc(&tarc, l, startAngle, endAngle, right, left, spdata);
 }
 
 /*
@@ -353,7 +365,7 @@ of the two quadratics
 
 y^2 + ((b+A)/2)y + (Z + (bZ - d)/A) = 0
 
-where 
+where
 
 A = +/- sqrt(8Z + b^2 - 4c)
 b, c, d are the cubic, quadratic, and linear coefficients of the quartic
@@ -362,16 +374,6 @@ Some experimentation is then required to determine which solutions
 correspond to the inner and outer boundaries.
 
 */
-
-typedef struct {
-    short lx, lw, rx, rw;
-} miArcSpan;
-
-typedef struct {
-    miArcSpan *spans;
-    int count1, count2, k;
-    char top, bot, hole;
-} miArcSpanData;
 
 static void drawQuadrant(struct arc_def *def, struct accelerators *acc,
                          int a0, int a1, int mask, miArcFacePtr right,
@@ -893,7 +895,7 @@ miWideArc(DrawablePtr pDraw, GCPtr pGC, int narcs, xArc * parcs)
     int xMin, xMax, yMin, yMax;
     int pixmapWidth = 0, pixmapHeight = 0;
     int xOrg = 0, yOrg = 0;
-    int width;
+    int width = pGC->lineWidth;
     Bool fTricky;
     DrawablePtr pDrawTo;
     CARD32 fg, bg;
@@ -903,213 +905,407 @@ miWideArc(DrawablePtr pDraw, GCPtr pGC, int narcs, xArc * parcs)
     int iphase;
     int halfWidth;
 
-    width = pGC->lineWidth;
     if (width == 0 && pGC->lineStyle == LineSolid) {
-        for (i = narcs, parc = parcs; --i >= 0; parc++)
-            miArcSegment(pDraw, pGC, *parc, (miArcFacePtr) 0, (miArcFacePtr) 0);
+        for (i = narcs, parc = parcs; --i >= 0; parc++) {
+            miArcSpanData *spdata;
+            spdata = miArcSegment(pDraw, pGC, *parc, NULL, NULL, NULL);
+            free(spdata);
+        }
         fillSpans(pDraw, pGC);
+        return;
     }
-    else {
-        if ((pGC->lineStyle == LineSolid) && narcs) {
-            while (parcs->width && parcs->height &&
-                   (parcs->angle2 >= FULLCIRCLE ||
-                    parcs->angle2 <= -FULLCIRCLE)) {
-                miFillWideEllipse(pDraw, pGC, parcs);
-                if (!--narcs)
-                    return;
-                parcs++;
-            }
+
+    if ((pGC->lineStyle == LineSolid) && narcs) {
+        while (parcs->width && parcs->height &&
+               (parcs->angle2 >= FULLCIRCLE || parcs->angle2 <= -FULLCIRCLE)) {
+            miFillWideEllipse(pDraw, pGC, parcs);
+            if (!--narcs)
+                return;
+            parcs++;
+        }
+    }
+
+    /* Set up pDrawTo and pGCTo based on the rasterop */
+    switch (pGC->alu) {
+    case GXclear:          /* 0 */
+    case GXcopy:           /* src */
+    case GXcopyInverted:   /* NOT src */
+    case GXset:            /* 1 */
+        fTricky = FALSE;
+        pDrawTo = pDraw;
+        pGCTo = pGC;
+        break;
+    default:
+        fTricky = TRUE;
+
+        /* find bounding box around arcs */
+        xMin = yMin = MAXSHORT;
+        xMax = yMax = MINSHORT;
+
+        for (i = narcs, parc = parcs; --i >= 0; parc++) {
+            xMin = min(xMin, parc->x);
+            yMin = min(yMin, parc->y);
+            xMax = max(xMax, (parc->x + (int) parc->width));
+            yMax = max(yMax, (parc->y + (int) parc->height));
         }
 
-        /* Set up pDrawTo and pGCTo based on the rasterop */
-        switch (pGC->alu) {
-        case GXclear:          /* 0 */
-        case GXcopy:           /* src */
-        case GXcopyInverted:   /* NOT src */
-        case GXset:            /* 1 */
-            fTricky = FALSE;
-            pDrawTo = pDraw;
-            pGCTo = pGC;
-            break;
-        default:
-            fTricky = TRUE;
+        /* expand box to deal with line widths */
+        halfWidth = (width + 1) / 2;
+        xMin -= halfWidth;
+        yMin -= halfWidth;
+        xMax += halfWidth;
+        yMax += halfWidth;
 
-            /* find bounding box around arcs */
-            xMin = yMin = MAXSHORT;
-            xMax = yMax = MINSHORT;
+        /* compute pixmap size; limit it to size of drawable */
+        xOrg = max(xMin, 0);
+        yOrg = max(yMin, 0);
+        pixmapWidth = min(xMax, pDraw->width) - xOrg;
+        pixmapHeight = min(yMax, pDraw->height) - yOrg;
 
-            for (i = narcs, parc = parcs; --i >= 0; parc++) {
-                xMin = min(xMin, parc->x);
-                yMin = min(yMin, parc->y);
-                xMax = max(xMax, (parc->x + (int) parc->width));
-                yMax = max(yMax, (parc->y + (int) parc->height));
-            }
+        /* if nothing left, return */
+        if ((pixmapWidth <= 0) || (pixmapHeight <= 0))
+            return;
 
-            /* expand box to deal with line widths */
-            halfWidth = (width + 1) / 2;
-            xMin -= halfWidth;
-            yMin -= halfWidth;
-            xMax += halfWidth;
-            yMax += halfWidth;
-
-            /* compute pixmap size; limit it to size of drawable */
-            xOrg = max(xMin, 0);
-            yOrg = max(yMin, 0);
-            pixmapWidth = min(xMax, pDraw->width) - xOrg;
-            pixmapHeight = min(yMax, pDraw->height) - yOrg;
-
-            /* if nothing left, return */
-            if ((pixmapWidth <= 0) || (pixmapHeight <= 0))
-                return;
-
-            for (i = narcs, parc = parcs; --i >= 0; parc++) {
-                parc->x -= xOrg;
-                parc->y -= yOrg;
-            }
-            if (pGC->miTranslate) {
-                xOrg += pDraw->x;
-                yOrg += pDraw->y;
-            }
-
-            /* set up scratch GC */
-
-            pGCTo = GetScratchGC(1, pDraw->pScreen);
-            if (!pGCTo)
-                return;
-            {
-                ChangeGCVal gcvals[6];
-
-                gcvals[0].val = GXcopy;
-                gcvals[1].val = 1;
-                gcvals[2].val = 0;
-                gcvals[3].val = pGC->lineWidth;
-                gcvals[4].val = pGC->capStyle;
-                gcvals[5].val = pGC->joinStyle;
-                ChangeGC(NullClient, pGCTo, GCFunction |
-                         GCForeground | GCBackground | GCLineWidth |
-                         GCCapStyle | GCJoinStyle, gcvals);
-            }
-
-            /* allocate a 1 bit deep pixmap of the appropriate size, and
-             * validate it */
-            pDrawTo = (DrawablePtr) (*pDraw->pScreen->CreatePixmap)
-                (pDraw->pScreen, pixmapWidth, pixmapHeight, 1,
-                 CREATE_PIXMAP_USAGE_SCRATCH);
-            if (!pDrawTo) {
-                FreeScratchGC(pGCTo);
-                return;
-            }
-            ValidateGC(pDrawTo, pGCTo);
-            miClearDrawable(pDrawTo, pGCTo);
+        for (i = narcs, parc = parcs; --i >= 0; parc++) {
+            parc->x -= xOrg;
+            parc->y -= yOrg;
+        }
+        if (pGC->miTranslate) {
+            xOrg += pDraw->x;
+            yOrg += pDraw->y;
         }
 
-        fg = pGC->fgPixel;
-        bg = pGC->bgPixel;
-        if ((pGC->fillStyle == FillTiled) ||
-            (pGC->fillStyle == FillOpaqueStippled))
-            bg = fg;            /* the protocol sez these don't cause color changes */
+        /* set up scratch GC */
+        pGCTo = GetScratchGC(1, pDraw->pScreen);
+        if (!pGCTo)
+            return;
+        {
+            ChangeGCVal gcvals[6];
 
-        polyArcs = miComputeArcs(parcs, narcs, pGC);
+            gcvals[0].val = GXcopy;
+            gcvals[1].val = 1;
+            gcvals[2].val = 0;
+            gcvals[3].val = pGC->lineWidth;
+            gcvals[4].val = pGC->capStyle;
+            gcvals[5].val = pGC->joinStyle;
+            ChangeGC(NullClient, pGCTo, GCFunction |
+                     GCForeground | GCBackground | GCLineWidth |
+                     GCCapStyle | GCJoinStyle, gcvals);
+        }
 
-        if (!polyArcs) {
-            if (fTricky) {
-                (*pDraw->pScreen->DestroyPixmap) ((PixmapPtr) pDrawTo);
-                FreeScratchGC(pGCTo);
-            }
+        /* allocate a bitmap of the appropriate size, and validate it */
+        pDrawTo = (DrawablePtr) (*pDraw->pScreen->CreatePixmap)
+            (pDraw->pScreen, pixmapWidth, pixmapHeight, 1,
+             CREATE_PIXMAP_USAGE_SCRATCH);
+        if (!pDrawTo) {
+            FreeScratchGC(pGCTo);
             return;
         }
+        ValidateGC(pDrawTo, pGCTo);
+        miClearDrawable(pDrawTo, pGCTo);
+    }
 
-        cap[0] = cap[1] = 0;
-        join[0] = join[1] = 0;
-        for (iphase = ((pGC->lineStyle == LineDoubleDash) ? 1 : 0);
-             iphase >= 0; iphase--) {
-            ChangeGCVal gcval;
+    fg = pGC->fgPixel;
+    bg = pGC->bgPixel;
 
-            if (iphase == 1) {
-                gcval.val = bg;
-                ChangeGC(NullClient, pGC, GCForeground, &gcval);
-                ValidateGC(pDraw, pGC);
+    /* the protocol sez these don't cause color changes */
+    if ((pGC->fillStyle == FillTiled) ||
+        (pGC->fillStyle == FillOpaqueStippled))
+        bg = fg;
+
+    polyArcs = miComputeArcs(parcs, narcs, pGC);
+    if (!polyArcs)
+        goto out;
+
+    cap[0] = cap[1] = 0;
+    join[0] = join[1] = 0;
+    for (iphase = (pGC->lineStyle == LineDoubleDash); iphase >= 0; iphase--) {
+        miArcSpanData *spdata = NULL;
+        xArc lastArc;
+        ChangeGCVal gcval;
+
+        if (iphase == 1) {
+            gcval.val = bg;
+            ChangeGC(NullClient, pGC, GCForeground, &gcval);
+            ValidateGC(pDraw, pGC);
+        }
+        else if (pGC->lineStyle == LineDoubleDash) {
+            gcval.val = fg;
+            ChangeGC(NullClient, pGC, GCForeground, &gcval);
+            ValidateGC(pDraw, pGC);
+        }
+        for (i = 0; i < polyArcs[iphase].narcs; i++) {
+            miArcDataPtr arcData;
+
+            arcData = &polyArcs[iphase].arcs[i];
+            if (spdata) {
+                if (lastArc.width != arcData->arc.width ||
+                    lastArc.height != arcData->arc.height) {
+                    free(spdata);
+                    spdata = NULL;
+                }
             }
-            else if (pGC->lineStyle == LineDoubleDash) {
-                gcval.val = fg;
-                ChangeGC(NullClient, pGC, GCForeground, &gcval);
-                ValidateGC(pDraw, pGC);
-            }
-            for (i = 0; i < polyArcs[iphase].narcs; i++) {
-                miArcDataPtr arcData;
+            memcpy(&lastArc, &arcData->arc, sizeof(xArc));
+            spdata = miArcSegment(pDrawTo, pGCTo, arcData->arc,
+                                  &arcData->bounds[RIGHT_END],
+                                  &arcData->bounds[LEFT_END], spdata);
+            if (polyArcs[iphase].arcs[i].render) {
+                fillSpans(pDrawTo, pGCTo);
+                /* don't cap self-joining arcs */
+                if (polyArcs[iphase].arcs[i].selfJoin &&
+                    cap[iphase] < polyArcs[iphase].arcs[i].cap)
+                    cap[iphase]++;
+                while (cap[iphase] < polyArcs[iphase].arcs[i].cap) {
+                    int arcIndex, end;
+                    miArcDataPtr arcData0;
 
-                arcData = &polyArcs[iphase].arcs[i];
-                miArcSegment(pDrawTo, pGCTo, arcData->arc,
-                             &arcData->bounds[RIGHT_END],
-                             &arcData->bounds[LEFT_END]);
-                if (polyArcs[iphase].arcs[i].render) {
-                    fillSpans(pDrawTo, pGCTo);
-                    /*
-                     * don't cap self-joining arcs
-                     */
-                    if (polyArcs[iphase].arcs[i].selfJoin &&
-                        cap[iphase] < polyArcs[iphase].arcs[i].cap)
-                        cap[iphase]++;
-                    while (cap[iphase] < polyArcs[iphase].arcs[i].cap) {
-                        int arcIndex, end;
-                        miArcDataPtr arcData0;
+                    arcIndex = polyArcs[iphase].caps[cap[iphase]].arcIndex;
+                    end = polyArcs[iphase].caps[cap[iphase]].end;
+                    arcData0 = &polyArcs[iphase].arcs[arcIndex];
+                    miArcCap(pDrawTo, pGCTo,
+                             &arcData0->bounds[end], end,
+                             arcData0->arc.x, arcData0->arc.y,
+                             (double) arcData0->arc.width / 2.0,
+                             (double) arcData0->arc.height / 2.0);
+                    ++cap[iphase];
+                }
+                while (join[iphase] < polyArcs[iphase].arcs[i].join) {
+                    int arcIndex0, arcIndex1, end0, end1;
+                    int phase0, phase1;
+                    miArcDataPtr arcData0, arcData1;
+                    miArcJoinPtr joinp;
 
-                        arcIndex = polyArcs[iphase].caps[cap[iphase]].arcIndex;
-                        end = polyArcs[iphase].caps[cap[iphase]].end;
-                        arcData0 = &polyArcs[iphase].arcs[arcIndex];
-                        miArcCap(pDrawTo, pGCTo,
-                                 &arcData0->bounds[end], end,
-                                 arcData0->arc.x, arcData0->arc.y,
-                                 (double) arcData0->arc.width / 2.0,
-                                 (double) arcData0->arc.height / 2.0);
-                        ++cap[iphase];
-                    }
-                    while (join[iphase] < polyArcs[iphase].arcs[i].join) {
-                        int arcIndex0, arcIndex1, end0, end1;
-                        int phase0, phase1;
-                        miArcDataPtr arcData0, arcData1;
-                        miArcJoinPtr joinp;
-
-                        joinp = &polyArcs[iphase].joins[join[iphase]];
-                        arcIndex0 = joinp->arcIndex0;
-                        end0 = joinp->end0;
-                        arcIndex1 = joinp->arcIndex1;
-                        end1 = joinp->end1;
-                        phase0 = joinp->phase0;
-                        phase1 = joinp->phase1;
-                        arcData0 = &polyArcs[phase0].arcs[arcIndex0];
-                        arcData1 = &polyArcs[phase1].arcs[arcIndex1];
-                        miArcJoin(pDrawTo, pGCTo,
-                                  &arcData0->bounds[end0],
-                                  &arcData1->bounds[end1],
-                                  arcData0->arc.x, arcData0->arc.y,
-                                  (double) arcData0->arc.width / 2.0,
-                                  (double) arcData0->arc.height / 2.0,
-                                  arcData1->arc.x, arcData1->arc.y,
-                                  (double) arcData1->arc.width / 2.0,
-                                  (double) arcData1->arc.height / 2.0);
-                        ++join[iphase];
-                    }
-                    if (fTricky) {
-                        if (pGC->serialNumber != pDraw->serialNumber)
-                            ValidateGC(pDraw, pGC);
-                        (*pGC->ops->PushPixels) (pGC, (PixmapPtr) pDrawTo,
-                                                 pDraw, pixmapWidth,
-                                                 pixmapHeight, xOrg, yOrg);
-                        miClearDrawable((DrawablePtr) pDrawTo, pGCTo);
-                    }
+                    joinp = &polyArcs[iphase].joins[join[iphase]];
+                    arcIndex0 = joinp->arcIndex0;
+                    end0 = joinp->end0;
+                    arcIndex1 = joinp->arcIndex1;
+                    end1 = joinp->end1;
+                    phase0 = joinp->phase0;
+                    phase1 = joinp->phase1;
+                    arcData0 = &polyArcs[phase0].arcs[arcIndex0];
+                    arcData1 = &polyArcs[phase1].arcs[arcIndex1];
+                    miArcJoin(pDrawTo, pGCTo,
+                              &arcData0->bounds[end0],
+                              &arcData1->bounds[end1],
+                              arcData0->arc.x, arcData0->arc.y,
+                              (double) arcData0->arc.width / 2.0,
+                              (double) arcData0->arc.height / 2.0,
+                              arcData1->arc.x, arcData1->arc.y,
+                              (double) arcData1->arc.width / 2.0,
+                              (double) arcData1->arc.height / 2.0);
+                    ++join[iphase];
+                }
+                if (fTricky) {
+                    if (pGC->serialNumber != pDraw->serialNumber)
+                        ValidateGC(pDraw, pGC);
+                    (*pGC->ops->PushPixels) (pGC, (PixmapPtr) pDrawTo,
+                                             pDraw, pixmapWidth,
+                                             pixmapHeight, xOrg, yOrg);
+                    miClearDrawable((DrawablePtr) pDrawTo, pGCTo);
                 }
             }
         }
-        miFreeArcs(polyArcs, pGC);
+        free(spdata);
+        spdata = NULL;
+    }
+    miFreeArcs(polyArcs, pGC);
 
-        if (fTricky) {
-            (*pGCTo->pScreen->DestroyPixmap) ((PixmapPtr) pDrawTo);
-            FreeScratchGC(pGCTo);
-        }
+out:
+    if (fTricky) {
+        (*pGCTo->pScreen->DestroyPixmap) ((PixmapPtr) pDrawTo);
+        FreeScratchGC(pGCTo);
     }
 }
 
+/* Find the index of the point with the smallest y.also return the
+ * smallest and largest y */
+static int
+GetFPolyYBounds(SppPointPtr pts, int n, double yFtrans, int *by, int *ty)
+{
+    SppPointPtr ptMin;
+    double ymin, ymax;
+    SppPointPtr ptsStart = pts;
+
+    ptMin = pts;
+    ymin = ymax = (pts++)->y;
+
+    while (--n > 0) {
+        if (pts->y < ymin) {
+            ptMin = pts;
+            ymin = pts->y;
+        }
+        if (pts->y > ymax)
+            ymax = pts->y;
+
+        pts++;
+    }
+
+    *by = ICEIL(ymin + yFtrans);
+    *ty = ICEIL(ymax + yFtrans - 1);
+    return ptMin - ptsStart;
+}
+
+/*
+ *	miFillSppPoly written by Todd Newman; April. 1987.
+ *
+ *	Fill a convex polygon.  If the given polygon
+ *	is not convex, then the result is undefined.
+ *	The algorithm is to order the edges from smallest
+ *	y to largest by partitioning the array into a left
+ *	edge list and a right edge list.  The algorithm used
+ *	to traverse each edge is digital differencing analyzer
+ *	line algorithm with y as the major axis. There's some funny linear
+ *	interpolation involved because of the subpixel postioning.
+ */
+static void
+miFillSppPoly(DrawablePtr dst, GCPtr pgc, int count,    /* number of points */
+              SppPointPtr ptsIn,        /* the points */
+              int xTrans, int yTrans,   /* Translate each point by this */
+              double xFtrans, double yFtrans    /* translate before conversion
+                                                   by this amount.  This provides
+                                                   a mechanism to match rounding
+                                                   errors with any shape that must
+                                                   meet the polygon exactly.
+                                                 */
+    )
+{
+    double xl = 0.0, xr = 0.0,  /* x vals of left and right edges */
+        ml = 0.0,               /* left edge slope */
+        mr = 0.0,               /* right edge slope */
+        dy,                     /* delta y */
+        i;                      /* loop counter */
+    int y,                      /* current scanline */
+     j, imin,                   /* index of vertex with smallest y */
+     ymin,                      /* y-extents of polygon */
+     ymax, *width, *FirstWidth, /* output buffer */
+    *Marked;                    /* set if this vertex has been used */
+    int left, right,            /* indices to first endpoints */
+     nextleft, nextright;       /* indices to second endpoints */
+    DDXPointPtr ptsOut, FirstPoint;     /* output buffer */
+
+    if (pgc->miTranslate) {
+        xTrans += dst->x;
+        yTrans += dst->y;
+    }
+
+    imin = GetFPolyYBounds(ptsIn, count, yFtrans, &ymin, &ymax);
+
+    y = ymax - ymin + 1;
+    if ((count < 3) || (y <= 0))
+        return;
+    ptsOut = FirstPoint = xallocarray(y, sizeof(DDXPointRec));
+    width = FirstWidth = xallocarray(y, sizeof(int));
+    Marked = xallocarray(count, sizeof(int));
+
+    if (!ptsOut || !width || !Marked) {
+        free(Marked);
+        free(width);
+        free(ptsOut);
+        return;
+    }
+
+    for (j = 0; j < count; j++)
+        Marked[j] = 0;
+    nextleft = nextright = imin;
+    Marked[imin] = -1;
+    y = ICEIL(ptsIn[nextleft].y + yFtrans);
+
+    /*
+     *  loop through all edges of the polygon
+     */
+    do {
+        /* add a left edge if we need to */
+        if ((y > (ptsIn[nextleft].y + yFtrans) ||
+             ISEQUAL(y, ptsIn[nextleft].y + yFtrans)) &&
+            Marked[nextleft] != 1) {
+            Marked[nextleft]++;
+            left = nextleft++;
+
+            /* find the next edge, considering the end conditions */
+            if (nextleft >= count)
+                nextleft = 0;
+
+            /* now compute the starting point and slope */
+            dy = ptsIn[nextleft].y - ptsIn[left].y;
+            if (dy != 0.0) {
+                ml = (ptsIn[nextleft].x - ptsIn[left].x) / dy;
+                dy = y - (ptsIn[left].y + yFtrans);
+                xl = (ptsIn[left].x + xFtrans) + ml * max(dy, 0);
+            }
+        }
+
+        /* add a right edge if we need to */
+        if ((y > ptsIn[nextright].y + yFtrans) ||
+            (ISEQUAL(y, ptsIn[nextright].y + yFtrans)
+             && Marked[nextright] != 1)) {
+            Marked[nextright]++;
+            right = nextright--;
+
+            /* find the next edge, considering the end conditions */
+            if (nextright < 0)
+                nextright = count - 1;
+
+            /* now compute the starting point and slope */
+            dy = ptsIn[nextright].y - ptsIn[right].y;
+            if (dy != 0.0) {
+                mr = (ptsIn[nextright].x - ptsIn[right].x) / dy;
+                dy = y - (ptsIn[right].y + yFtrans);
+                xr = (ptsIn[right].x + xFtrans) + mr * max(dy, 0);
+            }
+        }
+
+        /*
+         *  generate scans to fill while we still have
+         *  a right edge as well as a left edge.
+         */
+        i = (min(ptsIn[nextleft].y, ptsIn[nextright].y) + yFtrans) - y;
+
+        if (i < EPSILON) {
+            if (Marked[nextleft] && Marked[nextright]) {
+                /* Arrgh, we're trapped! (no more points)
+                 * Out, we've got to get out of here before this decadence saps
+                 * our will completely! */
+                break;
+            }
+            continue;
+        }
+        else {
+            j = (int) i;
+            if (!j)
+                j++;
+        }
+        while (j > 0) {
+            int cxl, cxr;
+
+            ptsOut->y = (y) + yTrans;
+
+            cxl = ICEIL(xl);
+            cxr = ICEIL(xr);
+            /* reverse the edges if necessary */
+            if (xl < xr) {
+                *(width++) = cxr - cxl;
+                (ptsOut++)->x = cxl + xTrans;
+            }
+            else {
+                *(width++) = cxl - cxr;
+                (ptsOut++)->x = cxr + xTrans;
+            }
+            y++;
+
+            /* increment down the edges */
+            xl += ml;
+            xr += mr;
+            j--;
+        }
+    } while (y <= ymax);
+
+    /* Finally, fill the spans we've collected */
+    (*pgc->ops->FillSpans) (dst, pgc,
+                            ptsOut - FirstPoint, FirstPoint, FirstWidth, 1);
+    free(Marked);
+    free(FirstWidth);
+    free(FirstPoint);
+}
 static double
 angleBetween(SppPointRec center, SppPointRec point1, SppPointRec point2)
 {
@@ -1291,7 +1487,7 @@ miArcCap(DrawablePtr pDraw,
 /* MIROUNDCAP -- a private helper function
  * Put Rounded cap on end. pCenter is the center of this end of the line
  * pEnd is the center of the other end of the line. pCorner is one of the
- * two corners at this end of the line.  
+ * two corners at this end of the line.
  * NOTE:  pOtherCorner must be counter-clockwise from pCorner.
  */
  /*ARGSUSED*/ static void
@@ -1443,7 +1639,7 @@ miDatan2(double dy, double dx)
  * array. (For example, if we want to leave a spare point to make sectors
  * instead of segments.)  So we pass in the malloc()ed chunk that contains the
  * array and an index saying where we should start stashing the points.
- * If there isn't an array already, we just pass in a null pointer and 
+ * If there isn't an array already, we just pass in a null pointer and
  * count on realloc() to handle the null pointer correctly.
  */
 static int
@@ -1462,7 +1658,7 @@ miGetArcPts(SppArcPtr parc,     /* points to an arc */
     SppPointPtr poly;
 
     /* The spec says that positive angles indicate counterclockwise motion.
-     * Given our coordinate system (with 0,0 in the upper left corner), 
+     * Given our coordinate system (with 0,0 in the upper left corner),
      * the screen appears flipped in Y.  The easiest fix is to negate the
      * angles given */
 
@@ -1489,8 +1685,7 @@ miGetArcPts(SppArcPtr parc,     /* points to an arc */
     count++;
 
     cdt = 2 * miDcos(dt);
-    if (!(poly = (SppPointPtr) realloc((void *) *ppPts,
-                                       (cpt + count) * sizeof(SppPointRec))))
+    if (!(poly = reallocarray(*ppPts, cpt + count, sizeof(SppPointRec))))
         return 0;
     *ppPts = poly;
 
@@ -1522,7 +1717,7 @@ miGetArcPts(SppArcPtr parc,     /* points to an arc */
         y1 = y2;
     }
     /* adjust the last point */
-    if (abs(parc->angle2) >= 360.0)
+    if (fabs(parc->angle2) >= 360.0)
         poly[cpt + i - 1] = poly[0];
     else {
         poly[cpt + i - 1].x = (miDcos(st + et) * parc->width / 2.0 + xc);
@@ -1547,7 +1742,7 @@ addCap(miArcCapPtr * capsp, int *ncapsp, int *sizep, int end, int arcIndex)
 
     if (*ncapsp == *sizep) {
         newsize = *sizep + ADD_REALLOC_STEP;
-        cap = (miArcCapPtr) realloc(*capsp, newsize * sizeof(**capsp));
+        cap = reallocarray(*capsp, newsize, sizeof(**capsp));
         if (!cap)
             return;
         *sizep = newsize;
@@ -1570,7 +1765,7 @@ addJoin(miArcJoinPtr * joinsp,
 
     if (*njoinsp == *sizep) {
         newsize = *sizep + ADD_REALLOC_STEP;
-        join = (miArcJoinPtr) realloc(*joinsp, newsize * sizeof(**joinsp));
+        join = reallocarray(*joinsp, newsize, sizeof(**joinsp));
         if (!join)
             return;
         *sizep = newsize;
@@ -1594,7 +1789,7 @@ addArc(miArcDataPtr * arcsp, int *narcsp, int *sizep, xArc * xarc)
 
     if (*narcsp == *sizep) {
         newsize = *sizep + ADD_REALLOC_STEP;
-        arc = (miArcDataPtr) realloc(*arcsp, newsize * sizeof(**arcsp));
+        arc = reallocarray(*arcsp, newsize, sizeof(**arcsp));
         if (!arc)
             return NULL;
         *sizep = newsize;
@@ -1700,10 +1895,10 @@ miComputeArcs(xArc * parcs, int narcs, GCPtr pGC)
     isDoubleDash = (pGC->lineStyle == LineDoubleDash);
     dashOffset = pGC->dashOffset;
 
-    data = malloc(narcs * sizeof(struct arcData));
+    data = xallocarray(narcs, sizeof(struct arcData));
     if (!data)
         return NULL;
-    arcs = malloc(sizeof(*arcs) * (isDoubleDash ? 2 : 1));
+    arcs = xallocarray(isDoubleDash ? 2 : 1, sizeof(*arcs));
     if (!arcs) {
         free(data);
         return NULL;
@@ -2548,7 +2743,7 @@ computeBound(struct arc_def *def,
 }
 
 /*
- * this section computes the x value of the span at y 
+ * this section computes the x value of the span at y
  * intersected with the specified face of the ellipse.
  *
  * this is the min/max X value over the set of normal
@@ -2561,7 +2756,7 @@ computeBound(struct arc_def *def,
  *
  * compute the derivative with-respect-to ellipse_y and solve
  * for zero:
- *    
+ *
  *       (w^2 - h^2) ellipse_y^3 + h^4 y
  * 0 = - ----------------------------------
  *       h w ellipse_y^2 sqrt (h^2 - ellipse_y^2)
@@ -2588,7 +2783,7 @@ computeBound(struct arc_def *def,
  *
  * or (to use accelerators),
  *
- * y0^3 (h^2 - w^2) - h^2 y (3y0^2 - 2h^2) 
+ * y0^3 (h^2 - w^2) - h^2 y (3y0^2 - 2h^2)
  *
  */
 
@@ -2891,8 +3086,8 @@ fillSpans(DrawablePtr pDrawable, GCPtr pGC)
 
     if (nspans == 0)
         return;
-    xSpan = xSpans = malloc(nspans * sizeof(DDXPointRec));
-    xWidth = xWidths = malloc(nspans * sizeof(int));
+    xSpan = xSpans = xallocarray(nspans, sizeof(DDXPointRec));
+    xWidth = xWidths = xallocarray(nspans, sizeof(int));
     if (xSpans && xWidths) {
         i = 0;
         f = finalSpans;
@@ -2946,7 +3141,7 @@ realFindSpan(int y)
         else
             change = SPAN_REALLOC;
         newSize = finalSize + change;
-        newSpans = malloc(newSize * sizeof(struct finalSpan *));
+        newSpans = xallocarray(newSize, sizeof(struct finalSpan *));
         if (!newSpans)
             return NULL;
         newMiny = finalMiny;
@@ -3061,9 +3256,9 @@ mirrorSppPoint(int quadrant, SppPointPtr sppPoint)
  * first quadrant.
  */
 
-static void
-drawArc(xArc * tarc,
-        int l, int a0, int a1, miArcFacePtr right, miArcFacePtr left)
+static miArcSpanData *
+drawArc(xArc * tarc, int l, int a0, int a1, miArcFacePtr right,
+        miArcFacePtr left, miArcSpanData *spdata)
 {                               /* save end line points */
     struct arc_def def;
     struct accelerators acc;
@@ -3079,11 +3274,11 @@ drawArc(xArc * tarc,
     int i, j;
     int flipRight = 0, flipLeft = 0;
     int copyEnd = 0;
-    miArcSpanData *spdata;
 
-    spdata = miComputeWideEllipse(l, tarc);
     if (!spdata)
-        return;
+        spdata = miComputeWideEllipse(l, tarc);
+    if (!spdata)
+        return NULL;
 
     if (a1 < a0)
         a1 += 360 * 64;
@@ -3293,7 +3488,7 @@ drawArc(xArc * tarc,
             left->counterClock = temp;
         }
     }
-    free(spdata);
+    return spdata;
 }
 
 static void

@@ -86,10 +86,8 @@ winValidateArgs(void)
             int iCount = 0;
 
             /* Count conflicting options */
-#ifdef XWIN_MULTIWINDOW
             if (g_ScreenInfo[i].fMultiWindow)
                 ++iCount;
-#endif
 #ifdef XWIN_MULTIWINDOWEXTWM
             if (g_ScreenInfo[i].fMWExtWM)
                 ++iCount;
@@ -112,10 +110,9 @@ winValidateArgs(void)
         /* Check for -multiwindow or -mwextwm and Xdmcp */
         /* allow xdmcp if screen 0 is normal. */
         if (g_fXdmcpEnabled && !fHasNormalScreen0 && (FALSE
-#ifdef XWIN_MULTIWINDOW
                                                       || g_ScreenInfo[i].
                                                       fMultiWindow
-#endif
+
 #ifdef XWIN_MULTIWINDOWEXTWM
                                                       || g_ScreenInfo[i].
                                                       fMWExtWM
@@ -127,17 +124,28 @@ winValidateArgs(void)
             return FALSE;
         }
 
-        /* Check for -multiwindow, -mwextwm, or -rootless and fullscreen */
+        /* Check for -multiwindow, -mwextwm, or -rootless and -fullscreen */
         if (g_ScreenInfo[i].fFullScreen && (FALSE
-#ifdef XWIN_MULTIWINDOW
                                             || g_ScreenInfo[i].fMultiWindow
-#endif
 #ifdef XWIN_MULTIWINDOWEXTWM
                                             || g_ScreenInfo[i].fMWExtWM
 #endif
                                             || g_ScreenInfo[i].fRootless)
             ) {
             ErrorF("winValidateArgs - -fullscreen is invalid with "
+                   "-multiwindow, -mwextwm, or -rootless.\n");
+            return FALSE;
+        }
+
+        /* Check for -multiwindow, -mwextwm, or -rootless and -nodecoration */
+        if (!g_ScreenInfo[i].fDecoration && (FALSE
+                                            || g_ScreenInfo[i].fMultiWindow
+#ifdef XWIN_MULTIWINDOWEXTWM
+                                            || g_ScreenInfo[i].fMWExtWM
+#endif
+                                            || g_ScreenInfo[i].fRootless)
+            ) {
+            ErrorF("winValidateArgs - -nodecoration is invalid with "
                    "-multiwindow, -mwextwm, or -rootless.\n");
             return FALSE;
         }
@@ -153,7 +161,7 @@ winValidateArgs(void)
 
         /* Check for fullscreen and any non-fullscreen parameters */
         if (g_ScreenInfo[i].fFullScreen
-            && ((g_ScreenInfo[i].iResizeMode != notAllowed)
+            && ((g_ScreenInfo[i].iResizeMode != resizeNotAllowed)
                 || !g_ScreenInfo[i].fDecoration
                 || g_ScreenInfo[i].fLessPointer)) {
             ErrorF("winValidateArgs - -fullscreen is invalid with "

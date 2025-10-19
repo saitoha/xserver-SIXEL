@@ -71,7 +71,7 @@ SOFTWARE.
  *
  */
 
-int
+int _X_COLD
 SProcXChangeFeedbackControl(ClientPtr client)
 {
     REQUEST(xChangeFeedbackControlReq);
@@ -464,9 +464,14 @@ ProcXChangeFeedbackControl(ClientPtr client)
         break;
     case StringFeedbackClass:
     {
-        xStringFeedbackCtl *f = ((xStringFeedbackCtl *) &stuff[1]);
+        xStringFeedbackCtl *f;
 
+        REQUEST_AT_LEAST_EXTRA_SIZE(xChangeFeedbackControlReq,
+                                    sizeof(xStringFeedbackCtl));
+        f = ((xStringFeedbackCtl *) &stuff[1]);
         if (client->swapped) {
+            if (len < bytes_to_int32(sizeof(xStringFeedbackCtl)))
+                return BadLength;
             swaps(&f->num_keysyms);
         }
         if (len !=

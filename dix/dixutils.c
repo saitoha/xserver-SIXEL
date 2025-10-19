@@ -26,13 +26,13 @@ Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
 
                         All Rights Reserved
 
-Permission to use, copy, modify, and distribute this software and its 
-documentation for any purpose and without fee is hereby granted, 
+Permission to use, copy, modify, and distribute this software and its
+documentation for any purpose and without fee is hereby granted,
 provided that the above copyright notice appear in all copies and that
-both that copyright notice and this permission notice appear in 
+both that copyright notice and this permission notice appear in
 supporting documentation, and that the name of Digital not be
 used in advertising or publicity pertaining to distribution of the
-software without specific, written prior permission.  
+software without specific, written prior permission.
 
 DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
 ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
@@ -352,7 +352,7 @@ DeleteWindowFromAnySaveSet(WindowPtr pWin)
 /* No-op Don't Do Anything : sometimes we need to be able to call a procedure
  * that doesn't do anything.  For example, on screen with only static
  * colormaps, if someone calls install colormap, it's easier to have a dummy
- * procedure to call than to check if there's a procedure 
+ * procedure to call than to check if there's a procedure
  */
 void
 NoopDDA(void)
@@ -360,8 +360,8 @@ NoopDDA(void)
 }
 
 typedef struct _BlockHandler {
-    BlockHandlerProcPtr BlockHandler;
-    WakeupHandlerProcPtr WakeupHandler;
+    ServerBlockHandlerProcPtr BlockHandler;
+    ServerWakeupHandlerProcPtr WakeupHandler;
     void *blockData;
     Bool deleted;
 } BlockHandlerRec, *BlockHandlerPtr;
@@ -373,26 +373,26 @@ static Bool inHandler;
 static Bool handlerDeleted;
 
 /**
- * 
+ *
  *  \param pTimeout   DIX doesn't want to know how OS represents time
  *  \param pReadMask  nor how it represents the det of descriptors
  */
 void
-BlockHandler(void *pTimeout, void *pReadmask)
+BlockHandler(void *pTimeout)
 {
     int i, j;
 
     ++inHandler;
-    for (i = 0; i < screenInfo.numScreens; i++)
-        (*screenInfo.screens[i]->BlockHandler) (screenInfo.screens[i],
-                                                pTimeout, pReadmask);
-    for (i = 0; i < screenInfo.numGPUScreens; i++)
-        (*screenInfo.gpuscreens[i]->BlockHandler) (screenInfo.gpuscreens[i],
-                                                   pTimeout, pReadmask);
     for (i = 0; i < numHandlers; i++)
         if (!handlers[i].deleted)
-            (*handlers[i].BlockHandler) (handlers[i].blockData,
-                                         pTimeout, pReadmask);
+            (*handlers[i].BlockHandler) (handlers[i].blockData, pTimeout);
+
+    for (i = 0; i < screenInfo.numGPUScreens; i++)
+        (*screenInfo.gpuscreens[i]->BlockHandler) (screenInfo.gpuscreens[i], pTimeout);
+
+    for (i = 0; i < screenInfo.numScreens; i++)
+        (*screenInfo.screens[i]->BlockHandler) (screenInfo.screens[i], pTimeout);
+
     if (handlerDeleted) {
         for (i = 0; i < numHandlers;)
             if (handlers[i].deleted) {
@@ -413,21 +413,18 @@ BlockHandler(void *pTimeout, void *pReadmask)
  *  \param pReadmask the resulting descriptor mask
  */
 void
-WakeupHandler(int result, void *pReadmask)
+WakeupHandler(int result)
 {
     int i, j;
 
     ++inHandler;
+    for (i = 0; i < screenInfo.numScreens; i++)
+        (*screenInfo.screens[i]->WakeupHandler) (screenInfo.screens[i], result);
+    for (i = 0; i < screenInfo.numGPUScreens; i++)
+        (*screenInfo.gpuscreens[i]->WakeupHandler) (screenInfo.gpuscreens[i], result);
     for (i = numHandlers - 1; i >= 0; i--)
         if (!handlers[i].deleted)
-            (*handlers[i].WakeupHandler) (handlers[i].blockData,
-                                          result, pReadmask);
-    for (i = 0; i < screenInfo.numScreens; i++)
-        (*screenInfo.screens[i]->WakeupHandler) (screenInfo.screens[i],
-                                                 result, pReadmask);
-    for (i = 0; i < screenInfo.numGPUScreens; i++)
-        (*screenInfo.gpuscreens[i]->WakeupHandler) (screenInfo.gpuscreens[i],
-                                                    result, pReadmask);
+            (*handlers[i].WakeupHandler) (handlers[i].blockData, result);
     if (handlerDeleted) {
         for (i = 0; i < numHandlers;)
             if (handlers[i].deleted) {
@@ -447,8 +444,8 @@ WakeupHandler(int result, void *pReadmask)
  * get called until next time
  */
 Bool
-RegisterBlockAndWakeupHandlers(BlockHandlerProcPtr blockHandler,
-                               WakeupHandlerProcPtr wakeupHandler,
+RegisterBlockAndWakeupHandlers(ServerBlockHandlerProcPtr blockHandler,
+                               ServerWakeupHandlerProcPtr wakeupHandler,
                                void *blockData)
 {
     BlockHandlerPtr new;
@@ -470,8 +467,8 @@ RegisterBlockAndWakeupHandlers(BlockHandlerProcPtr blockHandler,
 }
 
 void
-RemoveBlockAndWakeupHandlers(BlockHandlerProcPtr blockHandler,
-                             WakeupHandlerProcPtr wakeupHandler,
+RemoveBlockAndWakeupHandlers(ServerBlockHandlerProcPtr blockHandler,
+                             ServerWakeupHandlerProcPtr wakeupHandler,
                              void *blockData)
 {
     int i;
@@ -509,6 +506,19 @@ InitBlockAndWakeupHandlers(void)
 
 WorkQueuePtr workQueue;
 static WorkQueuePtr *workQueueLast = &workQueue;
+
+void
+ClearWorkQueue(void)
+{
+    WorkQueuePtr q, *p;
+
+    p = &workQueue;
+    while ((q = *p)) {
+        *p = q->next;
+        free(q);
+    }
+    workQueueLast = p;
+}
 
 void
 ProcessWorkQueue(void)
@@ -620,6 +630,28 @@ ClientSignal(ClientPtr client)
     return FALSE;
 }
 
+int
+ClientSignalAll(ClientPtr client, ClientSleepProcPtr function, void *closure)
+{
+    SleepQueuePtr q;
+    int count = 0;
+
+    for (q = sleepQueue; q; q = q->next) {
+        if (!(client == CLIENT_SIGNAL_ANY || q->client == client))
+            continue;
+
+        if (!(function == CLIENT_SIGNAL_ANY || q->function == function))
+            continue;
+
+        if (!(closure == CLIENT_SIGNAL_ANY || q->closure == closure))
+            continue;
+
+        count += QueueWorkProc(q->function, q->client, q->closure);
+    }
+
+    return count;
+}
+
 void
 ClientWakeup(ClientPtr client)
 {
@@ -630,14 +662,7 @@ ClientWakeup(ClientPtr client)
         if (q->client == client) {
             *prev = q->next;
             free(q);
-            if (client->clientGone)
-                /* Oops -- new zombie cleanup code ensures this only
-                 * happens from inside CloseDownClient; don't want to
-                 * recurse here...
-                 */
-                /* CloseDownClient(client) */ ;
-            else
-                AttendClient(client);
+            AttendClient(client);
             break;
         }
         prev = &q->next;

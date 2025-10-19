@@ -110,10 +110,11 @@ XICheckInvalidMaskBits(ClientPtr client, unsigned char *mask, int len)
     return Success;
 }
 
-int
+int _X_COLD
 SProcXISelectEvents(ClientPtr client)
 {
     int i;
+    int len;
     xXIEventMask *evmask;
 
     REQUEST(xXISelectEventsReq);
@@ -122,10 +123,17 @@ SProcXISelectEvents(ClientPtr client)
     swapl(&stuff->win);
     swaps(&stuff->num_masks);
 
+    len = stuff->length - bytes_to_int32(sizeof(xXISelectEventsReq));
     evmask = (xXIEventMask *) &stuff[1];
     for (i = 0; i < stuff->num_masks; i++) {
+        if (len < bytes_to_int32(sizeof(xXIEventMask)))
+            return BadLength;
+        len -= bytes_to_int32(sizeof(xXIEventMask));
         swaps(&evmask->deviceid);
         swaps(&evmask->mask_len);
+        if (len < evmask->mask_len)
+            return BadLength;
+        len -= evmask->mask_len;
         evmask =
             (xXIEventMask *) (((char *) &evmask[1]) + evmask->mask_len * 4);
     }
@@ -267,7 +275,7 @@ ProcXISelectEvents(ClientPtr client)
     return Success;
 }
 
-int
+int _X_COLD
 SProcXIGetSelectedEvents(ClientPtr client)
 {
     REQUEST(xXIGetSelectedEventsReq);

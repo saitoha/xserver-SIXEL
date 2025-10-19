@@ -92,7 +92,9 @@ ProcRRSelectInput(ClientPtr client)
                          RRCrtcChangeNotifyMask |
                          RROutputChangeNotifyMask |
                          RROutputPropertyNotifyMask |
-                         RRProviderPropertyNotifyMask)) {
+                         RRProviderChangeNotifyMask |
+                         RRProviderPropertyNotifyMask |
+                         RRResourceChangeNotifyMask)) {
         ScreenPtr pScreen = pWin->drawable.pScreen;
 
         rrScrPriv(pScreen);
@@ -254,4 +256,11 @@ int (*ProcRandrVector[RRNumberRequests]) (ClientPtr) = {
         ProcRRChangeProviderProperty, /* 39 */
         ProcRRDeleteProviderProperty, /* 40 */
         ProcRRGetProviderProperty,    /* 41 */
+/* V1.5 additions */
+        ProcRRGetMonitors,            /* 42 */
+        ProcRRSetMonitor,             /* 43 */
+        ProcRRDeleteMonitor,          /* 44 */
+/* V1.6 additions */
+        ProcRRCreateLease,            /* 45 */
+        ProcRRFreeLease,              /* 46 */
 };

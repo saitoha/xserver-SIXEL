@@ -473,7 +473,7 @@ expose_1(WindowPtr pWin)
     if (!pWin->realized)
         return;
 
-    miPaintWindow(pWin, &pWin->borderClip, PW_BACKGROUND);
+    pWin->drawable.pScreen->PaintWindow(pWin, &pWin->borderClip, PW_BACKGROUND);
 
     /* FIXME: comments in windowstr.h indicate that borderClip doesn't
        include subwindow visibility. But I'm not so sure.. so we may
@@ -603,7 +603,7 @@ RootlessQueueRedisplay(ScreenPtr pScreen)
  *  on select().
  */
 static void
-RootlessBlockHandler(void *pbdata, OSTimePtr pTimeout, void *pReadmask)
+RootlessBlockHandler(void *pbdata, void *ptimeout)
 {
     ScreenPtr pScreen = pbdata;
     RootlessScreenRec *screenRec = SCREENREC(pScreen);
@@ -616,7 +616,7 @@ RootlessBlockHandler(void *pbdata, OSTimePtr pTimeout, void *pReadmask)
 }
 
 static void
-RootlessWakeupHandler(void *data, int i, void *LastSelectMask)
+RootlessWakeupHandler(void *data, int result)
 {
     // nothing here
 }
@@ -669,6 +669,7 @@ RootlessWrap(ScreenPtr pScreen)
     WRAP(CloseScreen);
     WRAP(CreateGC);
     WRAP(CopyWindow);
+    WRAP(PaintWindow);
     WRAP(GetImage);
     WRAP(SourceValidate);
     WRAP(CreateWindow);

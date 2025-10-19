@@ -127,7 +127,7 @@ XISendDeviceHierarchyEvent(int flags[MAXDEVICES])
  *
  */
 
-int
+int _X_COLD
 SProcXIChangeHierarchy(ClientPtr client)
 {
     REQUEST(xXIChangeHierarchyReq);
@@ -194,7 +194,8 @@ add_master(ClientPtr client, xXIAddMasterInfo * c, int flags[MAXDEVICES])
     flags[XTestptr->id] |= XISlaveAttached;
     flags[XTestkeybd->id] |= XISlaveAttached;
 
-    XIBarrierNewMasterDevice(client, ptr->id);
+    for (int i = 0; i < currentMaxClients; i++)
+        XIBarrierNewMasterDevice(clients[i], ptr->id);
 
  unwind:
     free(name);
@@ -300,7 +301,8 @@ remove_master(ClientPtr client, xXIRemoveMasterInfo * r, int flags[MAXDEVICES])
         }
     }
 
-    XIBarrierRemoveMasterDevice(client, ptr->id);
+    for (int i = 0; i < currentMaxClients; i++)
+        XIBarrierRemoveMasterDevice(clients[i], ptr->id);
 
     /* disable the remove the devices, XTest devices must be done first
        else the sprites they rely on will be destroyed  */
@@ -411,7 +413,7 @@ int
 ProcXIChangeHierarchy(ClientPtr client)
 {
     xXIAnyHierarchyChangeInfo *any;
-    int required_len = sizeof(xXIChangeHierarchyReq);
+    size_t len;			/* length of data remaining in request */
     int rc = Success;
     int flags[MAXDEVICES] = { 0 };
 
@@ -421,21 +423,44 @@ ProcXIChangeHierarchy(ClientPtr client)
     if (!stuff->num_changes)
         return rc;
 
+    len = ((size_t)client->req_len << 2) - sizeof(xXIChangeHierarchyReq);
+
     any = (xXIAnyHierarchyChangeInfo *) &stuff[1];
     while (stuff->num_changes--) {
+        if (len < sizeof(xXIAnyHierarchyChangeInfo)) {
+            rc = BadLength;
+            goto unwind;
+        }
+
         SWAPIF(swaps(&any->type));
         SWAPIF(swaps(&any->length));
 
-        required_len += any->length;
-        if ((stuff->length * 4) < required_len)
+        if (len < ((size_t)any->length << 2))
             return BadLength;
+
+#define CHANGE_SIZE_MATCH(type) \
+    do { \
+        if ((len < sizeof(type)) || (any->length != (sizeof(type) >> 2))) { \
+            rc = BadLength; \
+            goto unwind; \
+        } \
+    } while(0)
 
         switch (any->type) {
         case XIAddMaster:
         {
             xXIAddMasterInfo *c = (xXIAddMasterInfo *) any;
 
+            /* Variable length, due to appended name string */
+            if (len < sizeof(xXIAddMasterInfo)) {
+                rc = BadLength;
+                goto unwind;
+            }
             SWAPIF(swaps(&c->name_len));
+            if (c->name_len > (len - sizeof(xXIAddMasterInfo))) {
+                rc = BadLength;
+                goto unwind;
+            }
 
             rc = add_master(client, c, flags);
             if (rc != Success)
@@ -446,6 +471,7 @@ ProcXIChangeHierarchy(ClientPtr client)
         {
             xXIRemoveMasterInfo *r = (xXIRemoveMasterInfo *) any;
 
+            CHANGE_SIZE_MATCH(xXIRemoveMasterInfo);
             rc = remove_master(client, r, flags);
             if (rc != Success)
                 goto unwind;
@@ -455,6 +481,7 @@ ProcXIChangeHierarchy(ClientPtr client)
         {
             xXIDetachSlaveInfo *c = (xXIDetachSlaveInfo *) any;
 
+            CHANGE_SIZE_MATCH(xXIDetachSlaveInfo);
             rc = detach_slave(client, c, flags);
             if (rc != Success)
                 goto unwind;
@@ -464,6 +491,7 @@ ProcXIChangeHierarchy(ClientPtr client)
         {
             xXIAttachSlaveInfo *c = (xXIAttachSlaveInfo *) any;
 
+            CHANGE_SIZE_MATCH(xXIAttachSlaveInfo);
             rc = attach_slave(client, c, flags);
             if (rc != Success)
                 goto unwind;
@@ -471,6 +499,7 @@ ProcXIChangeHierarchy(ClientPtr client)
             break;
         }
 
+        len -= any->length * 4;
         any = (xXIAnyHierarchyChangeInfo *) ((char *) any + any->length * 4);
     }
 

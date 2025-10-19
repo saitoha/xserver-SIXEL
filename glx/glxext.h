@@ -51,16 +51,18 @@
 #define GLX_RGBA_UNSIGNED_FLOAT_TYPE_EXT   0x20B1
 #endif
 
-extern GLboolean __glXFreeContext(__GLXcontext * glxc);
 extern void __glXFlushContextCache(void);
 
 extern Bool __glXAddContext(__GLXcontext * cx);
 extern void __glXErrorCallBack(GLenum code);
 extern void __glXClearErrorOccured(void);
 extern GLboolean __glXErrorOccured(void);
-extern void __glXResetLargeCommandStatus(__GLXclientState *);
 
 extern const char GLServerVersion[];
 extern int DoGetString(__GLXclientState * cl, GLbyte * pc, GLboolean need_swap);
+
+extern int
+xorgGlxMakeCurrent(ClientPtr client, GLXContextTag tag, XID drawId, XID readId,
+                   XID contextId, GLXContextTag newContextTag);
 
 #endif                          /* _glxext_h_ */

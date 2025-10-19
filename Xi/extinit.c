@@ -380,18 +380,6 @@ DevPrivateKeyRec XIClientPrivateKeyRec;
  *
  */
 
-static void
-XIClientCallback(CallbackListPtr *list, void *closure, void *data)
-{
-    NewClientInfoRec *clientinfo = (NewClientInfoRec *) data;
-    ClientPtr pClient = clientinfo->client;
-    XIClientPtr pXIClient;
-
-    pXIClient = dixLookupPrivate(&pClient->devPrivates, XIClientPrivateKey);
-    pXIClient->major_version = 0;
-    pXIClient->minor_version = 0;
-}
-
 /*************************************************************************
  *
  * ProcIDispatch - main dispatch routine for requests to this extension.
@@ -406,6 +394,7 @@ ProcIDispatch(ClientPtr client)
     if (stuff->data >= ARRAY_SIZE(ProcIVector) || !ProcIVector[stuff->data])
         return BadRequest;
 
+    UpdateCurrentTimeIf();
     return (*ProcIVector[stuff->data]) (client);
 }
 
@@ -418,13 +407,14 @@ ProcIDispatch(ClientPtr client)
  *
  */
 
-static int
+static int _X_COLD
 SProcIDispatch(ClientPtr client)
 {
     REQUEST(xReq);
     if (stuff->data >= ARRAY_SIZE(SProcIVector) || !SProcIVector[stuff->data])
         return BadRequest;
 
+    UpdateCurrentTimeIf();
     return (*SProcIVector[stuff->data]) (client);
 }
 
@@ -435,7 +425,7 @@ SProcIDispatch(ClientPtr client)
  *
  */
 
-static void
+static void _X_COLD
 SReplyIDispatch(ClientPtr client, int len, xGrabDeviceReply * rep)
 {
     /* All we look at is the type field */
@@ -869,7 +859,7 @@ SBarrierEvent(xXIBarrierEvent * from,
 }
 
 /** Event swapping function for XI2 events. */
-void
+void _X_COLD
 XI2EventSwap(xGenericEvent *from, xGenericEvent *to)
 {
     switch (from->evtype) {
@@ -1212,7 +1202,7 @@ MakeDeviceTypeAtoms(void)
  */
 #define DO_SWAP(func,type) func ((type *)from, (type *)to)
 
-static void
+static void _X_COLD
 SEventIDispatch(xEvent *from, xEvent *to)
 {
     int type = from->u.u.type & 0177;
@@ -1295,9 +1285,6 @@ XInputExtensionInit(void)
     if (!dixRegisterPrivateKey
         (&XIClientPrivateKeyRec, PRIVATE_CLIENT, sizeof(XIClientRec)))
         FatalError("Cannot request private for XI.\n");
-
-    if (!AddCallback(&ClientStateCallback, XIClientCallback, 0))
-        FatalError("Failed to add callback to XI.\n");
 
     if (!XIBarrierInit())
         FatalError("Could not initialize barriers.\n");

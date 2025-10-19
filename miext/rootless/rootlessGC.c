@@ -297,7 +297,7 @@ RootlessCreateGC(GCPtr pGC)
  * All the others just unwrap and call.
  */
 
-// GCFUNC_UNRAP assumes funcs have been wrapped and 
+// GCFUNC_UNRAP assumes funcs have been wrapped and
 // does not assume ops have been wrapped
 #define GCFUNC_UNWRAP(pGC) \
     RootlessGCRec *gcrec = (RootlessGCRec *) \
@@ -403,7 +403,7 @@ RootlessCopyClip(GCPtr pgcDst, GCPtr pgcSrc)
 #define GCOP_UNWRAP(pGC) \
     RootlessGCRec *gcrec = (RootlessGCRec *) \
         dixLookupPrivate(&(pGC)->devPrivates, rootlessGCPrivateKey); \
-    GCFuncs *saveFuncs = pGC->funcs; \
+    const GCFuncs *saveFuncs = pGC->funcs; \
     (pGC)->funcs = gcrec->originalFuncs; \
     (pGC)->ops = gcrec->originalOps;
 
